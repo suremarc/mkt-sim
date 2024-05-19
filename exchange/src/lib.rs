@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
 use figment::Figment;
 use rocket_db_pools::{Database, Pool};
@@ -17,6 +17,14 @@ pub struct Accounting(pub AccountingPool);
 
 #[derive(Clone)]
 pub struct AccountingPool(Arc<tb::Client>);
+
+impl Deref for AccountingPool {
+    type Target = tb::Client;
+
+    fn deref(&self) -> &tb::Client {
+        self.0.deref()
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 struct TbConfig {
