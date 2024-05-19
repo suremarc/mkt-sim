@@ -21,6 +21,17 @@ services:
           ./tigerbeetle format --cluster=0 --replica=0 --replica-count=1 /data/0_0.tigerbeetle
         fi
 
+  exchange:
+    image: suremarc/mkt-sim-exchange
+    volumes:
+      - type: bind
+        source: ./data.db
+        target: /var/data/data.db
+    ports: [ 8000:8000 ]
+    environment:
+      - DATABASE_URL=/var/data/data.db
+      - APP_DEFAULT_DATABASES_INSTRUMENTS_URL=/var/data/data.db
+      - APP_DEFAULT_DATABASES_ACCOUNTING_URL=tigerbeetle:3000
 volumes:
   tigerbeetle:
     driver: local

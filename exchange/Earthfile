@@ -21,26 +21,51 @@ copy-src:
     RUN git init && git commit --allow-empty -m "initial commit"
     ENV GIT_DISCOVERY_ACROSS_FILESYSTEM=1
 
+sqlx-check:
+    FROM +copy-src
     DO rust+CARGO --args="sqlx prepare --check"
 
-build-debug:
+sqlx-setup:
     FROM +copy-src
+    COPY .env ./
+    DO rust+CARGO --args="sqlx database setup"
+    DO rust+CARGO --args="sqlx prepare"
+    SAVE ARTIFACT .sqlx AS LOCAL .sqlx
+    SAVE ARTIFACT data.db AS LOCAL data.db
+
+build-debug:
+    FROM +sqlx-check
     DO rust+CARGO --args="build" --output="debug/[^/]+"
     SAVE ARTIFACT target/debug /debug
 
 build-release:
-    FROM +copy-src
+    FROM +sqlx-check
     DO rust+CARGO --args="build --release" --output="release/[^/]+"
     SAVE ARTIFACT target/release /release
 
 test:
-    FROM +copy-src
+    FROM +sqlx-check
     DO rust+CARGO --args="test"
 
 fmt:
-    FROM +copy-src
+    FROM +sqlx-check
     DO rust+CARGO --args "fmt --check"
 
 lint:
-    FROM +copy-src
+    FROM +sqlx-check
     DO rust+CARGO --args="clippy --all-targets --all-features -- -D warnings"
+
+docker:
+    FROM debian:bookworm
+    WORKDIR /opt/exchange
+
+    ARG TARGET=debug
+    COPY +build-$TARGET/$TARGET/exchange ./bin/
+
+    COPY Rocket.toml .
+
+    ENTRYPOINT ["/opt/exchange/bin/exchange"]
+    CMD ["serve"]
+
+    ARG EARTHLY_GIT_HASH
+    SAVE IMAGE --push suremarc/mkt-sim-exchange suremarc/mkt-sim-exchange:$EARTHLY_GIT_HASH
