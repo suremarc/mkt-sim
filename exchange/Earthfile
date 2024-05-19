@@ -8,7 +8,6 @@ setup:
     ENV RUSTFLAGS="-C linker=clang -C link-arg=-fuse-ld=/usr/bin/mold"
     RUN rustup component add clippy rustfmt
     DO rust+INIT --keep-fingerprints=true
-    # ENV GIT_DISCOVERY_ACROSS_FILESYSTEM=1
 
 copy-src:
     FROM +setup
@@ -19,8 +18,6 @@ copy-src:
     # tigerbeetle needs to be in a git repository to be built for some reason
     RUN git config --global user.email "you@example.com" && git config --global user.name "Your Name"
     RUN git init && git commit --allow-empty -m "initial commit"
-
-    ENV GIT_DISCOVERY_ACROSS_FILESYSTEM=1
 
 build-debug:
     FROM +copy-src
