@@ -1,8 +1,9 @@
-use std::path::PathBuf;
+use std::{ops::Deref, path::PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use exchange::{Accounting, Instruments};
+use rocket::{Ignite, Rocket};
 use rocket_db_pools::Database;
 
 #[derive(Debug, Clone, Parser)]
@@ -32,14 +33,21 @@ async fn main() -> Result<()> {
         .context("ignite rocket")?;
 
     match args.command {
-        Command::Migrate => sqlx::migrate!()
-            .run(&Instruments::fetch(&rocket).context("fetch database")?.0)
-            .await
-            .context("migrate database")?,
+        Command::Migrate => migrate(rocket).await?,
         Command::Serve => {
             let _ = rocket.launch().await;
         }
     };
+
+    Ok(())
+}
+
+async fn migrate(rocket: Rocket<Ignite>) -> Result<()> {
+    let instruments = Instruments::fetch(&rocket).context("fetch database")?;
+    sqlx::migrate!()
+        .run(instruments.deref())
+        .await
+        .context("migrate database")?;
 
     Ok(())
 }

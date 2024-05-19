@@ -27,12 +27,10 @@ impl Deref for AccountingPool {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 struct TbConfig {
-    #[serde(default)]
     cluster_id: u32,
-    #[serde(default)]
     address: String,
-    #[serde(default)]
     concurrency_max: u32,
 }
 
