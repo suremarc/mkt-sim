@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   tigerbeetle:
     image: ghcr.io/tigerbeetle/tigerbeetle
@@ -31,6 +29,8 @@ services:
       - type: bind
         source: ./Rocket.toml
         target: ${PWD}/Rocket.toml
+    environment:
+      - ROCKET_CONFIG=${PWD}/Rocket.toml
     depends_on:
       tigerbeetle:
         condition: service_started

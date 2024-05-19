@@ -41,7 +41,6 @@ impl Pool for AccountingPool {
 
     async fn init(figment: &Figment) -> Result<Self, Self::Error> {
         let config: rocket_db_pools::Config = figment.extract().map_err(AccountingError::Config)?;
-        dbg!(&config);
 
         tb::Client::new(0, config.url, config.max_connections as u32)
             .map(|c| AccountingPool(Arc::new(c)))
