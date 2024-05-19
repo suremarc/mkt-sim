@@ -16,5 +16,9 @@ thiserror = "1.0.61"
 tigerbeetle-unofficial = { version = "0.3.0", features = [
   "tokio-rt-multi-thread",
 ] }
-tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros", "tracing"] }
+tokio = { version = "1.37.0", features = [
+  "rt-multi-thread",
+  "macros",
+  "tracing",
+] }
 tracing = "0.1.40"
