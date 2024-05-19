@@ -1,31 +1,26 @@
 VERSION --try 0.8
-IMPORT github.com/earthly/lib/rust:2.2.11 AS rust
+IMPORT github.com/earthly/lib/rust:3.0.2 AS rust
 
 FROM rust:1.78-bookworm
 
 setup:
     RUN apt-get -y update && apt-get -y install clang mold
-
-    # Install zig
-    ARG ZIG_VERS=0.12.0
-    COPY +get-zig/zig-linux-x86_64-$ZIG_VERS /usr/local/zig-linux-x86_64-$ZIG_VERS
-    ENV PATH=/usr/local/zig-linux-x86_64-$ZIG_VERS:$PATH
-    RUN zig version
-
-    # Setup rust environment
     ENV RUSTFLAGS="-C linker=clang -C link-arg=-fuse-ld=/usr/bin/mold"
-    DO rust+INIT --keep-fingerprints=true
     RUN rustup component add clippy rustfmt
-
-get-zig:
-    RUN curl -LO https://ziglang.org/download/0.12.0/zig-linux-x86_64-0.12.0.tar.xz
-    RUN tar xf zig-linux-x86_64-0.12.0.tar.xz
-    SAVE ARTIFACT zig-linux-x86_64-0.12.0
+    DO rust+INIT --keep-fingerprints=true
+    # ENV GIT_DISCOVERY_ACROSS_FILESYSTEM=1
 
 copy-src:
     FROM +setup
-    WORKDIR /tmp/atlas
+    WORKDIR /tmp/exchange
     COPY --keep-ts --dir Cargo.toml Cargo.lock src ./
+
+    # Ugly hack
+    # tigerbeetle needs to be in a git repository to be built for some reason
+    RUN git config --global user.email "you@example.com" && git config --global user.name "Your Name"
+    RUN git init && git commit --allow-empty -m "initial commit"
+
+    ENV GIT_DISCOVERY_ACROSS_FILESYSTEM=1
 
 build-debug:
     FROM +copy-src
