@@ -8,12 +8,11 @@ setup:
     ENV RUSTFLAGS="-C linker=clang -C link-arg=-fuse-ld=/usr/bin/mold"
     RUN rustup component add clippy rustfmt
     DO rust+INIT --keep-fingerprints=true
-    # ENV GIT_DISCOVERY_ACROSS_FILESYSTEM=1
 
 copy-src:
     FROM +setup
     WORKDIR /tmp/exchange
-    COPY --keep-ts --dir Cargo.toml Cargo.lock src ./
+    COPY --keep-ts --dir Cargo.toml Cargo.lock src migrations build.rs ./
 
     # Ugly hack
     # tigerbeetle needs to be in a git repository to be built for some reason
