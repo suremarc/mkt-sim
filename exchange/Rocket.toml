@@ -1,0 +1,4 @@
+[default.databases.instruments]
+url = "data.db"
+
+[default.databases.accounting]
