@@ -10,7 +10,10 @@ permissions:
   pull-requests: write
 
 jobs:
-  earthly:
+  exchange:
+    defaults:
+      run:
+        working-directory: exchange
     strategy:
       fail-fast: false
       matrix:
