@@ -28,6 +28,9 @@ services:
       - type: bind
         source: ./data.db
         target: ${PWD}/data.db
+      - type: bind
+        source: ./Rocket.toml
+        target: ${PWD}/Rocket.toml
     depends_on:
       tigerbeetle:
         condition: service_started

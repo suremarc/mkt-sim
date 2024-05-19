@@ -62,8 +62,6 @@ docker:
     ARG TARGET=debug
     COPY +build-$TARGET/$TARGET/exchange ./bin/
 
-    COPY Rocket.toml .
-
     ENTRYPOINT ["/opt/exchange/bin/exchange"]
     CMD ["serve"]
 
