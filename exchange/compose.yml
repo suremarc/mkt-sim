@@ -4,11 +4,11 @@ services:
   tigerbeetle:
     image: ghcr.io/tigerbeetle/tigerbeetle
     volumes: [ tigerbeetle:/data ]
-    network_mode: host
     command: start --addresses=127.0.0.1:3000 /data/0_0.tigerbeetle
     depends_on:
       tigerbeetle-format:
         condition: service_completed_successfully
+    network_mode: service:exchange
 
   tigerbeetle-format:
     image: ghcr.io/tigerbeetle/tigerbeetle
@@ -23,11 +23,12 @@ services:
 
   exchange:
     image: suremarc/mkt-sim-exchange
+    ports: [ 8000:8000 ]
     volumes:
       - type: bind
         source: ./data.db
         target: ${PWD}/data.db
-    network_mode: host
+
 volumes:
   tigerbeetle:
     driver: local
