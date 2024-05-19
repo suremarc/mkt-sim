@@ -2,7 +2,7 @@ use std::{ops::Deref, path::PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use exchange::{Accounting, Instruments};
+use exchange::{api, Instruments};
 use rocket::{Ignite, Rocket};
 use rocket_db_pools::Database;
 
@@ -25,12 +25,7 @@ pub enum Command {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let rocket = rocket::build()
-        .attach(Instruments::init())
-        .attach(Accounting::init())
-        .ignite()
-        .await
-        .context("ignite rocket")?;
+    let rocket = api::rocket().ignite().await.context("ignite rocket")?;
 
     match args.command {
         Command::Migrate => migrate(rocket).await?,

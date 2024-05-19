@@ -54,7 +54,7 @@ pub enum AccountingError {
 
 #[async_trait::async_trait]
 impl Pool for AccountingPool {
-    type Connection = Self;
+    type Connection = Arc<tb::Client>;
 
     /// The error type returned by [`Self::init()`] and [`Self::get()`].
     type Error = AccountingError;
@@ -68,7 +68,7 @@ impl Pool for AccountingPool {
     }
 
     async fn get(&self) -> Result<Self::Connection, Self::Error> {
-        Ok(self.clone())
+        Ok(Arc::clone(&self.0))
     }
 
     async fn close(&self) {}
