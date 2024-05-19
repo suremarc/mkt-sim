@@ -21,7 +21,7 @@ pub enum Command {
     Serve,
 }
 
-#[tokio::main]
+#[rocket::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 

@@ -1,2 +1,5 @@
 [default.databases.instruments]
 url = "data.db"
+
+[default.databases.accounting]
+url = "127.0.0.1:3000"

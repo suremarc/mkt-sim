@@ -4,7 +4,7 @@ services:
   tigerbeetle:
     image: ghcr.io/tigerbeetle/tigerbeetle
     volumes: [ tigerbeetle:/data ]
-    ports: [ 3000:3000 ]
+    network_mode: host
     command: start --addresses=127.0.0.1:3000 /data/0_0.tigerbeetle
     depends_on:
       tigerbeetle-format:
@@ -26,12 +26,8 @@ services:
     volumes:
       - type: bind
         source: ./data.db
-        target: /var/data/data.db
-    ports: [ 8000:8000 ]
-    environment:
-      - DATABASE_URL=/var/data/data.db
-      - APP_DEFAULT_DATABASES_INSTRUMENTS_URL=/var/data/data.db
-      - APP_DEFAULT_DATABASES_ACCOUNTING_URL=tigerbeetle:3000
+        target: ${PWD}/data.db
+    network_mode: host
 volumes:
   tigerbeetle:
     driver: local

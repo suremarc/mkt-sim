@@ -2,7 +2,6 @@ use std::{ops::Deref, sync::Arc};
 
 use figment::Figment;
 use rocket_db_pools::{Database, Pool};
-use serde::Deserialize;
 use tigerbeetle_unofficial as tb;
 
 pub mod api;
@@ -26,29 +25,11 @@ impl Deref for AccountingPool {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
-struct TbConfig {
-    cluster_id: u32,
-    address: String,
-    concurrency_max: u32,
-}
-
-impl Default for TbConfig {
-    fn default() -> Self {
-        Self {
-            cluster_id: 0,
-            address: "127.0.0.1:3000".to_string(),
-            concurrency_max: 32,
-        }
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum AccountingError {
-    #[error("couldn't read TigerBeetle config")]
+    #[error("couldn't read TigerBeetle config: {0}")]
     Config(figment::Error),
-    #[error("connect to TigerBeetle")]
+    #[error("connect to TigerBeetle {0}")]
     Connect(tb::error::NewClientError),
 }
 
@@ -56,13 +37,13 @@ pub enum AccountingError {
 impl Pool for AccountingPool {
     type Connection = Arc<tb::Client>;
 
-    /// The error type returned by [`Self::init()`] and [`Self::get()`].
     type Error = AccountingError;
 
     async fn init(figment: &Figment) -> Result<Self, Self::Error> {
-        let config: TbConfig = figment.extract().map_err(AccountingError::Config)?;
+        let config: rocket_db_pools::Config = figment.extract().map_err(AccountingError::Config)?;
+        dbg!(&config);
 
-        tb::Client::new(config.cluster_id, config.address, config.concurrency_max)
+        tb::Client::new(0, config.url, config.max_connections as u32)
             .map(|c| AccountingPool(Arc::new(c)))
             .map_err(AccountingError::Connect)
     }
