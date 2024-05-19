@@ -1,13 +1,26 @@
 VERSION --try 0.8
 IMPORT github.com/earthly/lib/rust:2.2.11 AS rust
 
-FROM rust:1.76-bookworm
+FROM rust:1.78-bookworm
 
 setup:
-    RUN apt-get -y update && apt-get -y install cmake protobuf-compiler clang mold
+    RUN apt-get -y update && apt-get -y install clang mold
+
+    # Install zig
+    ARG ZIG_VERS=0.12.0
+    COPY +get-zig/zig-linux-x86_64-$ZIG_VERS /usr/local/zig-linux-x86_64-$ZIG_VERS
+    ENV PATH=/usr/local/zig-linux-x86_64-$ZIG_VERS:$PATH
+    RUN zig version
+
+    # Setup rust environment
     ENV RUSTFLAGS="-C linker=clang -C link-arg=-fuse-ld=/usr/bin/mold"
     DO rust+INIT --keep-fingerprints=true
     RUN rustup component add clippy rustfmt
+
+get-zig:
+    RUN curl -LO https://ziglang.org/download/0.12.0/zig-linux-x86_64-0.12.0.tar.xz
+    RUN tar xf zig-linux-x86_64-0.12.0.tar.xz
+    SAVE ARTIFACT zig-linux-x86_64-0.12.0
 
 copy-src:
     FROM +setup
