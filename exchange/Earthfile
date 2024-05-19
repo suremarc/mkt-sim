@@ -1,0 +1,37 @@
+VERSION --try 0.8
+IMPORT github.com/earthly/lib/rust:2.2.11 AS rust
+
+FROM rust:1.76-bookworm
+
+setup:
+    RUN apt-get -y update && apt-get -y install cmake protobuf-compiler clang mold
+    ENV RUSTFLAGS="-C linker=clang -C link-arg=-fuse-ld=/usr/bin/mold"
+    DO rust+INIT --keep-fingerprints=true
+    RUN rustup component add clippy rustfmt
+
+copy-src:
+    FROM +setup
+    WORKDIR /tmp/atlas
+    COPY --keep-ts --dir Cargo.toml Cargo.lock src ./
+
+build-debug:
+    FROM +copy-src
+    DO rust+CARGO --args="build" --output="debug/[^/]+"
+    SAVE ARTIFACT target/debug /debug
+
+build-release:
+    FROM +copy-src
+    DO rust+CARGO --args="build --release" --output="release/[^/]+"
+    SAVE ARTIFACT target/release /release
+
+test:
+    FROM +copy-src
+    DO rust+CARGO --args="test"
+
+fmt:
+    FROM +copy-src
+    DO rust+CARGO --args "fmt --check"
+
+lint:
+    FROM +copy-src
+    DO rust+CARGO --args="clippy --all-targets --all-features -- -D warnings"

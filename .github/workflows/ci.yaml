@@ -1,0 +1,27 @@
+name: CI
+on: [ push ]
+
+concurrency: 
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  earthly:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [fmt, lint, test]
+    runs-on: ubuntu-32gb-ash-1
+    steps:
+    - uses: earthly/actions-setup@v1
+      with: 
+        version: v0.8.10
+    - uses: actions/checkout@v4
+      with: 
+        submodules: true
+    - name: Run +${{ matrix.target }}
+      run: earthly --ci +${{ matrix.target }}
