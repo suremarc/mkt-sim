@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO equities VALUES (?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "860664ec9c8b3dcb9b4faae065c2ed6ac7cfebeaf82d55623bf050381f1fb4c0"
+}
