@@ -11,7 +11,7 @@ pub mod api;
 #[rustfmt::skip]
 pub mod schema;
 
-#[database("accountservices")]
+#[database("meta")]
 pub struct MetaConn(pub diesel::SqliteConnection);
 
 #[derive(Database)]

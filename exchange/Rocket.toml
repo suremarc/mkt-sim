@@ -1,4 +1,4 @@
-[default.databases.accountservices]
+[default.databases.meta]
 url = "data.db"
 
 [default.databases.accounting]
