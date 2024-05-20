@@ -58,12 +58,11 @@ impl From<Password> for String {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromSqlRow, AsExpression, Hash, Eq, PartialEq)]
-#[diesel(sql_type = BigInt)]
-pub struct Roles(i64);
-
 bitflags! {
-    impl Roles: i64 {
+    #[derive(Debug, Clone, Serialize, Deserialize, FromSqlRow, AsExpression, Hash, Eq, PartialEq)]
+    #[repr(transparent)]
+    #[diesel(sql_type = BigInt)]
+    pub struct Roles: i64 {
         const ADMIN = 1 << 0;
         const USER = 1 << 1;
     }
@@ -71,13 +70,13 @@ bitflags! {
 
 impl From<i64> for Roles {
     fn from(value: i64) -> Self {
-        Self(value)
+        Self::from_bits_truncate(value)
     }
 }
 
 impl From<Roles> for i64 {
     fn from(value: Roles) -> Self {
-        value.0
+        value.bits()
     }
 }
 
