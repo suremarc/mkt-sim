@@ -8,6 +8,7 @@ use rocket_sync_db_pools::database;
 use tigerbeetle_unofficial as tb;
 
 pub mod api;
+#[rustfmt::skip]
 pub mod schema;
 
 #[database("accountservices")]
