@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT \n            scope AS \"scope!: Scope\", \n            max(admin) AS \"admin!: bool\"\n        FROM role_permissions \n        NATURAL INNER JOIN user_roles\n        WHERE user_id = ?\n        GROUP BY scope\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "scope!: Scope",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "admin!: bool",
+        "ordinal": 1,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "af77db04fa82e6f846043a3ecc2e62659dd2ea39f514dd3610836347caf1d823"
+}

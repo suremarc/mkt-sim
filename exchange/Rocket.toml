@@ -1,4 +1,4 @@
-[default.databases.instruments]
+[default.databases.metadata]
 url = "data.db"
 
 [default.databases.accounting]

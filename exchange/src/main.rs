@@ -2,7 +2,7 @@ use std::{ops::Deref, path::PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use exchange::{api, Instruments};
+use exchange::{api, Metadata};
 use rocket::{Ignite, Rocket};
 use rocket_db_pools::Database;
 
@@ -38,9 +38,9 @@ async fn main() -> Result<()> {
 }
 
 async fn migrate(rocket: Rocket<Ignite>) -> Result<()> {
-    let instruments = Instruments::fetch(&rocket).context("fetch database")?;
+    let db = Metadata::fetch(&rocket).context("fetch database")?;
     sqlx::migrate!()
-        .run(instruments.deref())
+        .run(db.deref())
         .await
         .context("migrate database")?;
 

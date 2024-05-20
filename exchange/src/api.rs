@@ -1,56 +1,36 @@
-use rocket::{get, http::Status, post, routes, serde::json::Json, Build, Rocket};
-use rocket_db_pools::{Connection, Database};
+use rocket::{Build, Rocket};
+use rocket_db_pools::Database;
 use serde::{Deserialize, Serialize};
-use sqlx::prelude::FromRow;
 
-use crate::{Accounting, Instruments};
+use crate::{Accounting, Metadata};
+
+mod accountservices;
+mod instruments;
 
 pub fn rocket() -> Rocket<Build> {
     rocket::build()
-        .attach(Instruments::init())
+        .attach(Metadata::init())
         .attach(Accounting::init())
-        .mount(
-            "/",
-            routes![get_instruments_equity, create_instruments_equity],
-        )
+        .mount("/instruments/", instruments::routes())
+        .mount("/accountservices", accountservices::routes())
 }
 
-#[get("/instruments/equities/<ticker>", format = "json")]
-async fn get_instruments_equity(
-    mut instruments: Connection<Instruments>,
-    ticker: &str,
-) -> Result<Json<InstrumentEquity>, Status> {
-    let row = sqlx::query_as!(
-        InstrumentEquity,
-        "SELECT * FROM equities WHERE ticker = ?",
-        ticker
-    )
-    .fetch_one(&mut **instruments)
-    .await
-    .map_err(|_e| Status::NotFound)?;
-
-    Ok(Json(row))
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct List<T> {
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub count: usize,
+    pub items: Vec<T>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, FromRow)]
-struct InstrumentEquity {
-    ticker: String,
-    description: Option<String>,
+fn is_zero(num: &usize) -> bool {
+    *num == 0
 }
 
-#[post("/instruments/equities", data = "<form>")]
-async fn create_instruments_equity(
-    mut instruments: Connection<Instruments>,
-    form: Json<InstrumentEquity>,
-) -> Result<(), (Status, &'static str)> {
-    sqlx::query!(
-        "INSERT INTO equities VALUES (?, ?)",
-        form.ticker,
-        form.description
-    )
-    .execute(&mut **instruments)
-    .await
-    .map_err(|_e| (Status::Conflict, "record already exists"))?;
-
-    Ok(())
+impl<T> From<Vec<T>> for List<T> {
+    fn from(value: Vec<T>) -> Self {
+        Self {
+            count: value.len(),
+            items: value,
+        }
+    }
 }

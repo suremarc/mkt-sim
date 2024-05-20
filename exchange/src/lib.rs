@@ -7,8 +7,8 @@ use tigerbeetle_unofficial as tb;
 pub mod api;
 
 #[derive(Database)]
-#[database("instruments")]
-pub struct Instruments(pub sqlx::SqlitePool);
+#[database("metadata")]
+pub struct Metadata(pub sqlx::SqlitePool);
 
 #[derive(Database)]
 #[database("accounting")]
