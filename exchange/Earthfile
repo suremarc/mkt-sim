@@ -53,6 +53,7 @@ lint:
 docker:
     FROM debian:bookworm
     WORKDIR /opt/exchange
+    RUN apt-get -y update && apt-get -y install libsqlite3-dev
 
     ARG TARGET=debug
     COPY +build-$TARGET/$TARGET/exchange ./bin/

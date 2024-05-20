@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use exchange::{api, AccountServicesConn};
+use exchange::{api, MetaConn};
 use rocket::{Ignite, Rocket};
 
 #[derive(Debug, Clone, Parser)]
@@ -37,9 +37,7 @@ async fn main() -> Result<()> {
 }
 
 async fn migrate(rocket: Rocket<Ignite>) -> Result<()> {
-    let _db = AccountServicesConn::get_one(&rocket)
-        .await
-        .context("fetch database")?;
+    let _db = MetaConn::get_one(&rocket).await.context("fetch database")?;
     // sqlx::migrate!()
     //     .run(db.deref())
     //     .await

@@ -8,11 +8,10 @@ use rocket_sync_db_pools::database;
 use tigerbeetle_unofficial as tb;
 
 pub mod api;
-pub mod models;
 pub mod schema;
 
 #[database("accountservices")]
-pub struct AccountServicesConn(pub diesel::SqliteConnection);
+pub struct MetaConn(pub diesel::SqliteConnection);
 
 #[derive(Database)]
 #[database("accounting")]

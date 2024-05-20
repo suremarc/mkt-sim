@@ -2,16 +2,16 @@ use rocket::{Build, Rocket};
 use rocket_db_pools::Database;
 use serde::{Deserialize, Serialize};
 
-use crate::{AccountServicesConn, Accounting};
+use crate::{Accounting, MetaConn};
 
 mod accountservices;
-// mod instruments;
+mod assets;
 
 pub fn rocket() -> Rocket<Build> {
     rocket::build()
-        .attach(AccountServicesConn::fairing())
+        .attach(MetaConn::fairing())
         .attach(Accounting::init())
-        // .mount("/instruments/", instruments::routes())
+        .mount("/assets/", assets::routes())
         .mount("/accountservices", accountservices::routes())
 }
 
