@@ -1,10 +1,9 @@
-use std::{ops::Deref, path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use exchange::{api, Metadata};
+use exchange::{api, AccountServicesConn};
 use rocket::{Ignite, Rocket};
-use rocket_db_pools::Database;
 
 #[derive(Debug, Clone, Parser)]
 struct Args {
@@ -38,11 +37,13 @@ async fn main() -> Result<()> {
 }
 
 async fn migrate(rocket: Rocket<Ignite>) -> Result<()> {
-    let db = Metadata::fetch(&rocket).context("fetch database")?;
-    sqlx::migrate!()
-        .run(db.deref())
+    let _db = AccountServicesConn::get_one(&rocket)
         .await
-        .context("migrate database")?;
+        .context("fetch database")?;
+    // sqlx::migrate!()
+    //     .run(db.deref())
+    //     .await
+    //     .context("migrate database")?;
 
     Ok(())
 }

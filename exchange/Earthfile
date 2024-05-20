@@ -4,16 +4,16 @@ IMPORT github.com/earthly/lib/rust:3.0.2 AS rust
 FROM rust:1.78-bookworm
 
 setup:
-    RUN apt-get -y update && apt-get -y install clang mold
+    RUN apt-get -y update && apt-get -y install clang mold libsqlite3-dev
     ENV RUSTFLAGS="-C linker=clang -C link-arg=-fuse-ld=/usr/bin/mold"
     RUN rustup component add clippy rustfmt
     DO rust+INIT --keep-fingerprints=true
-    DO rust+CARGO --args="install sqlx-cli"
+    DO rust+CARGO --args="install diesel_cli --no-default-features --features=sqlite"
 
 copy-src:
     FROM +setup
     WORKDIR /tmp/exchange
-    COPY --keep-ts --dir Cargo.toml Cargo.lock src migrations build.rs .sqlx ./
+    COPY --keep-ts --dir Cargo.toml Cargo.lock src migrations diesel.toml ./
 
     # Ugly hack
     # tigerbeetle needs to be in a git repository to be built for some reason
@@ -21,38 +21,33 @@ copy-src:
     RUN git init && git commit --allow-empty -m "initial commit"
     ENV GIT_DISCOVERY_ACROSS_FILESYSTEM=1
 
-sqlx-check:
-    FROM +copy-src
-    DO rust+CARGO --args="sqlx prepare --check"
-
-sqlx-setup:
+diesel-setup:
     FROM +copy-src
     COPY .env ./
-    DO rust+CARGO --args="sqlx database setup"
-    DO rust+CARGO --args="sqlx prepare"
-    SAVE ARTIFACT .sqlx AS LOCAL .sqlx
+    RUN diesel setup
     SAVE ARTIFACT data.db AS LOCAL data.db
+    SAVE ARTIFACT src/schema.rs AS LOCAL src/schema.rs
 
 build-debug:
-    FROM +sqlx-check
+    FROM +copy-src
     DO rust+CARGO --args="build" --output="debug/[^/]+"
     SAVE ARTIFACT target/debug /debug
 
 build-release:
-    FROM +sqlx-check
+    FROM +copy-src
     DO rust+CARGO --args="build --release" --output="release/[^/]+"
     SAVE ARTIFACT target/release /release
 
 test:
-    FROM +sqlx-check
+    FROM +copy-src
     DO rust+CARGO --args="test"
 
 fmt:
-    FROM +sqlx-check
+    FROM +copy-src
     DO rust+CARGO --args "fmt --check"
 
 lint:
-    FROM +sqlx-check
+    FROM +copy-src
     DO rust+CARGO --args="clippy --all-targets --all-features -- -D warnings"
 
 docker:

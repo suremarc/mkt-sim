@@ -1,14 +1,18 @@
+#![allow(clippy::enum_clike_unportable_variant)]
+
 use std::{ops::Deref, sync::Arc};
 
 use figment::Figment;
 use rocket_db_pools::{Database, Pool};
+use rocket_sync_db_pools::database;
 use tigerbeetle_unofficial as tb;
 
 pub mod api;
+pub mod models;
+pub mod schema;
 
-#[derive(Database)]
-#[database("metadata")]
-pub struct Metadata(pub sqlx::SqlitePool);
+#[database("accountservices")]
+pub struct AccountServicesConn(pub diesel::SqliteConnection);
 
 #[derive(Database)]
 #[database("accounting")]

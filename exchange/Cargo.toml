@@ -9,13 +9,20 @@ async-trait = "0.1.80"
 bcrypt = "0.15.1"
 chrono = { version = "0.4.38", features = ["serde"] }
 clap = { version = "4.5.4", features = ["derive", "env"] }
+diesel = { version = "2.1.6", features = [
+  "chrono",
+  "time",
+  "serde_json",
+  "uuid",
+  "sqlite",
+] }
 email_address = "0.2.4"
 figment = { version = "0.10.19", features = ["toml"] }
 fixed = { version = "1.27.0", features = ["serde"] }
 rocket = { version = "0.5.0", features = ["json", "uuid"] }
-rocket_db_pools = { version = "0.1.0", features = ["sqlx_sqlite"] }
+rocket_db_pools = { version = "0.1.0" }
+rocket_sync_db_pools = { version = "0.1.0", features = ["diesel_sqlite_pool"] }
 serde = "1.0.202"
-sqlx = { version = "0.7.4", features = ["sqlite", "runtime-tokio", "migrate", "json", "uuid"] }
 thiserror = "1.0.61"
 tigerbeetle-unofficial = { version = "0.3.0", features = [
   "tokio-rt-multi-thread",
