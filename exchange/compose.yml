@@ -1,12 +1,14 @@
 services:
   tigerbeetle:
     image: ghcr.io/tigerbeetle/tigerbeetle
-    network_mode: host
+    network_mode: service:exchange
     volumes: [ tigerbeetle:/data ]
     command: start --addresses=127.0.0.1:3000 /data/0_0.tigerbeetle
     depends_on:
       tigerbeetle-format:
         condition: service_completed_successfully
+      exchange:
+        condition: service_started
 
   tigerbeetle-format:
     image: ghcr.io/tigerbeetle/tigerbeetle
@@ -21,7 +23,9 @@ services:
 
   exchange:
     image: suremarc/mkt-sim-exchange
-    network_mode: host
+    ports: [ 127.0.0.1:8000:8000 ]
+    environment:
+      - ROCKET_ADDRESS=0.0.0.0
     volumes:
       - type: bind
         source: ./data.db
@@ -29,9 +33,6 @@ services:
       - type: bind
         source: ./Rocket.toml
         target: /opt/exchange/Rocket.toml
-    depends_on:
-      tigerbeetle:
-        condition: service_started
 
 volumes:
   tigerbeetle:
