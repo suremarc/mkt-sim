@@ -1,5 +1,7 @@
-use diesel::{QueryDsl, RunQueryDsl};
+use bitflags::bitflags;
+use diesel::{sql_types::BigInt, QueryDsl, RunQueryDsl};
 use rocket::{get, http::Status, post, routes, serde::json::Json, Route};
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::{schema::users::dsl::users, MetaConn};
@@ -34,13 +36,49 @@ pub struct User {
     #[diesel(serialize_as = String, deserialize_as = String)]
     pub email: Email,
     #[serde(skip_serializing)]
-    pub password: String,
-    pub role_flags: i64,
+    #[diesel(serialize_as = String, deserialize_as = String)]
+    pub password: Password,
+    #[diesel(serialize_as = i64, deserialize_as = i64)]
+    pub role_flags: Roles,
 }
 
-pub enum Role {
-    Admin = 1 << 0,
-    User = 1 << 1,
+#[derive(Debug, Clone, Deserialize)]
+#[serde(transparent)]
+pub struct Password(SecretString);
+
+impl From<String> for Password {
+    fn from(value: String) -> Self {
+        Self(SecretString::new(value))
+    }
+}
+
+impl From<Password> for String {
+    fn from(value: Password) -> Self {
+        value.0.expose_secret().clone()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromSqlRow, AsExpression, Hash, Eq, PartialEq)]
+#[diesel(sql_type = BigInt)]
+pub struct Roles(i64);
+
+bitflags! {
+    impl Roles: i64 {
+        const ADMIN = 1 << 0;
+        const USER = 1 << 1;
+    }
+}
+
+impl From<i64> for Roles {
+    fn from(value: i64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Roles> for i64 {
+    fn from(value: Roles) -> Self {
+        value.0
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromSqlRow, AsExpression, Hash, Eq, PartialEq)]
@@ -148,22 +186,28 @@ async fn list_accounts(conn: MetaConn) -> Result<Json<List<User>>, Status> {
 struct NewAccountForm {
     email: Email,
     password: String,
+    #[serde(default)]
     admin: bool,
 }
 
 #[post("/register", data = "<form>")]
 async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<User>, Status> {
+    let form = form.0;
+
     let id = Uuid(uuid::Uuid::new_v4());
     let hash = bcrypt::hash(&form.password, bcrypt::DEFAULT_COST)
         .map_err(|_e| Status::InternalServerError)?;
+
+    let mut role_flags = Roles::USER;
+    role_flags.set(Roles::ADMIN, form.admin);
 
     conn.run(move |c| {
         diesel::insert_into(users)
             .values(User {
                 id,
-                email: form.email.clone(),
-                password: hash,
-                role_flags: Role::User as i64 | (form.admin as i64 & Role::Admin as i64),
+                email: form.email,
+                password: hash.into(),
+                role_flags,
             })
             .get_result(c)
     })

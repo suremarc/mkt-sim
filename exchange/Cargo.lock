@@ -230,6 +230,9 @@ name = "bitflags"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf4b9d6a944f767f8e5e0db018570623c85f3d925ac718db4e06d0187adb21c1"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "blowfish"
@@ -585,6 +588,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bcrypt",
+ "bitflags 2.5.0",
  "chrono",
  "clap",
  "diesel",
@@ -594,6 +598,7 @@ dependencies = [
  "rocket",
  "rocket_db_pools",
  "rocket_sync_db_pools",
+ "secrecy",
  "serde",
  "thiserror",
  "tigerbeetle-unofficial",
@@ -1634,6 +1639,16 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "secrecy"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bd1c54ea06cfd2f6b63219704de0b9b4f72dcc2b8fdef820be6cd799780e91e"
+dependencies = [
+ "serde",
+ "zeroize",
+]
 
 [[package]]
 name = "serde"
