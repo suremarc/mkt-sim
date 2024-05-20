@@ -39,6 +39,7 @@ pub struct User {
     #[diesel(serialize_as = String, deserialize_as = String)]
     pub password: Password,
     #[diesel(serialize_as = i64, deserialize_as = i64)]
+    #[serde(rename = "roles")]
     pub role_flags: Roles,
 }
 
