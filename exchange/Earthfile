@@ -8,10 +8,14 @@ setup:
     ENV RUSTFLAGS="-C linker=clang -C link-arg=-fuse-ld=/usr/bin/mold"
     RUN rustup component add clippy rustfmt
     DO rust+INIT --keep-fingerprints=true
+
+install-diesel:
+    FROM +setup
     DO rust+CARGO --args="install diesel_cli --no-default-features --features=sqlite"
+    SAVE ARTIFACT /usr/local/cargo/bin/diesel
 
 copy-src:
-    FROM +setup
+    FROM +install-diesel
     WORKDIR /tmp/exchange
     COPY --keep-ts --dir Cargo.toml Cargo.lock src migrations diesel.toml ./
 
@@ -57,6 +61,9 @@ docker:
 
     ARG TARGET=debug
     COPY +build-$TARGET/$TARGET/exchange ./bin/
+
+    # Install diesel so we can do migrations if need be
+    COPY +install-diesel/diesel /usr/local/bin
 
     ENTRYPOINT ["/opt/exchange/bin/exchange"]
     CMD ["serve"]

@@ -4,12 +4,10 @@ name = "exchange"
 version = "0.1.0"
 
 [dependencies]
-anyhow = "1.0.86"
 async-trait = "0.1.80"
 bcrypt = "0.15.1"
 bitflags = { version = "2.5.0", features = ["serde"] }
 chrono = { version = "0.4.38", features = ["serde"] }
-clap = { version = "4.5.4", features = ["derive", "env"] }
 diesel = { version = "2.1.6", features = ["chrono", "time", "serde_json", "uuid", "sqlite", "returning_clauses_for_sqlite_3_35"] }
 email_address = "0.2.4"
 figment = { version = "0.10.19", features = ["toml"] }

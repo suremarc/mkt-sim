@@ -5,9 +5,11 @@ use std::{ops::Deref, sync::Arc};
 use figment::Figment;
 use rocket_db_pools::{Database, Pool};
 use rocket_sync_db_pools::database;
+use serde::{Deserialize, Serialize};
 use tigerbeetle_unofficial as tb;
 
-pub mod api;
+pub mod accountservices;
+pub mod assets;
 #[rustfmt::skip]
 pub mod schema;
 
@@ -56,4 +58,24 @@ impl Pool for AccountingPool {
     }
 
     async fn close(&self) {}
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct List<T> {
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub count: usize,
+    pub items: Vec<T>,
+}
+
+fn is_zero(num: &usize) -> bool {
+    *num == 0
+}
+
+impl<T> From<Vec<T>> for List<T> {
+    fn from(value: Vec<T>) -> Self {
+        Self {
+            count: value.len(),
+            items: value,
+        }
+    }
 }
