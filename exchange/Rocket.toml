@@ -1,3 +1,7 @@
+[debug.admin]
+email = "admin@mkt-sim.com"
+password = "password"
+
 [debug.databases]
 meta = { url = "data.db" }
 accounting = { url = "127.0.0.1:3000" }

@@ -100,11 +100,11 @@ impl Deref for JwtSecretKey {
 
 #[async_trait::async_trait]
 impl<'r> FromRequest<'r> for JwtSecretKey {
-    type Error = figment::Error;
+    type Error = ();
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         match req.rocket().figment().extract_inner("jwt.token") {
-            Err(e) => Outcome::Error((Status::InternalServerError, e)),
+            Err(_e) => Outcome::Error((Status::InternalServerError, ())),
             Ok(r) => Outcome::Success(JwtSecretKey(r)),
         }
     }

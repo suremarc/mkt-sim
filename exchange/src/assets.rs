@@ -15,7 +15,10 @@ use rocket::{get, http::Status, post, routes, serde::json::Json, Route};
 use serde::{Deserialize, Serialize};
 use strum_macros::{EnumString, IntoStaticStr};
 
-use crate::MetaConn;
+use crate::{
+    auth::{AdminCheck, UserCheck},
+    MetaConn,
+};
 
 use super::List;
 
@@ -139,7 +142,7 @@ where
 }
 
 #[get("/equities")]
-async fn list_equities(conn: MetaConn) -> Result<Json<List<Equity>>, Status> {
+async fn list_equities(_check: UserCheck, conn: MetaConn) -> Result<Json<List<Equity>>, Status> {
     conn.run(|c| crate::schema::equities::dsl::equities.get_results(c))
         .await
         .map(List::from)
@@ -148,7 +151,11 @@ async fn list_equities(conn: MetaConn) -> Result<Json<List<Equity>>, Status> {
 }
 
 #[get("/equities/<id>", rank = 0)]
-async fn get_equity_by_id(conn: MetaConn, id: i32) -> Result<Json<Equity>, Status> {
+async fn get_equity_by_id(
+    _check: UserCheck,
+    conn: MetaConn,
+    id: i32,
+) -> Result<Json<Equity>, Status> {
     conn.run(move |c| crate::schema::equities::dsl::equities.find(id).first(c))
         .await
         .map(Json)
@@ -159,7 +166,11 @@ async fn get_equity_by_id(conn: MetaConn, id: i32) -> Result<Json<Equity>, Statu
 }
 
 #[get("/equities/<ticker>", rank = 1)]
-async fn get_equity_by_ticker(conn: MetaConn, ticker: String) -> Result<Json<Equity>, Status> {
+async fn get_equity_by_ticker(
+    _check: UserCheck,
+    conn: MetaConn,
+    ticker: String,
+) -> Result<Json<Equity>, Status> {
     use crate::schema::equities::dsl;
     conn.run(move |c| dsl::equities.filter(dsl::ticker.eq(ticker)).first(c))
         .await
@@ -182,6 +193,7 @@ sql_function!(fn last_insert_rowid() -> Integer);
 
 #[post("/equities", data = "<form>")]
 async fn create_equities(
+    _check: AdminCheck,
     conn: MetaConn,
     form: Json<List<CreateEquityForm>>,
 ) -> Result<Json<List<Equity>>, Status> {
@@ -211,6 +223,7 @@ async fn create_equities(
 
 #[post("/equities/options", data = "<form>")]
 async fn create_equity_options(
+    _check: AdminCheck,
     conn: MetaConn,
     form: Json<List<EquityOption>>,
 ) -> Result<(), Status> {
@@ -231,6 +244,7 @@ async fn create_equity_options(
 
 #[get("/equities/<id>/options", rank = 0)]
 async fn list_equity_options_by_underlying_id(
+    _check: UserCheck,
     conn: MetaConn,
     id: i32,
 ) -> Result<Json<List<EquityOption>>, Status> {
@@ -259,6 +273,7 @@ async fn list_equity_options_by_underlying_id(
 
 #[get("/equities/<ticker>/options", rank = 1)]
 async fn list_equity_options_by_underlying_ticker(
+    _check: UserCheck,
     conn: MetaConn,
     ticker: String,
 ) -> Result<Json<List<EquityOption>>, Status> {

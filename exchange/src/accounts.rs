@@ -4,13 +4,23 @@ use diesel::{
     deserialize::{self, FromSql},
     serialize::{self, Output, ToSql},
     sql_types::BigInt,
-    QueryDsl, RunQueryDsl,
+    upsert::excluded,
+    ExpressionMethods, QueryDsl, RunQueryDsl,
 };
-use rocket::{get, http::Status, post, routes, serde::json::Json, Route};
+use rocket::{
+    fairing, get,
+    http::Status,
+    post,
+    request::{FromRequest, Outcome},
+    routes,
+    serde::json::Json,
+    Build, Request, Rocket, Route,
+};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    auth::{AdminCheck, AuthnClaim, RoleCheck, UserCheck},
     schema::users::dsl,
     types::{Email, Password, Uuid},
     MetaConn,
@@ -67,7 +77,11 @@ where
 }
 
 #[get("/<id>")]
-async fn get_account_by_id(conn: MetaConn, id: uuid::Uuid) -> Result<Json<User>, Status> {
+async fn get_account_by_id(
+    _check: UserIdCheck,
+    conn: MetaConn,
+    id: uuid::Uuid,
+) -> Result<Json<User>, Status> {
     conn.run(move |c| dsl::users.find(Uuid(id)).first(c))
         .await
         .map(Json)
@@ -78,7 +92,7 @@ async fn get_account_by_id(conn: MetaConn, id: uuid::Uuid) -> Result<Json<User>,
 }
 
 #[get("/")]
-async fn list_accounts(conn: MetaConn) -> Result<Json<List<User>>, Status> {
+async fn list_accounts(_check: AdminCheck, conn: MetaConn) -> Result<Json<List<User>>, Status> {
     conn.run(|c| dsl::users.load(c))
         .await
         .map(List::from)
@@ -90,8 +104,6 @@ async fn list_accounts(conn: MetaConn) -> Result<Json<List<User>>, Status> {
 struct NewAccountForm {
     email: Email,
     password: SecretString,
-    #[serde(default)]
-    admin: bool,
 }
 
 #[post("/", data = "<form>")]
@@ -104,16 +116,13 @@ async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<Use
         .map(Password)
         .map_err(|_e| Status::InternalServerError)?;
 
-    let mut role_flags = Roles::USER;
-    role_flags.set(Roles::ADMIN, form.admin);
-
     conn.run(move |c| {
         diesel::insert_into(dsl::users)
             .values(User {
                 id,
                 email: form.email,
                 password: hash,
-                role_flags,
+                role_flags: Roles::USER,
             })
             .get_result(c)
     })
@@ -123,4 +132,69 @@ async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<Use
         diesel::result::Error::DatabaseError(_, _) => Status::Conflict,
         _ => Status::InternalServerError,
     })
+}
+
+#[allow(unused)]
+struct UserIdCheck(pub AuthnClaim);
+
+#[async_trait::async_trait]
+impl<'r> FromRequest<'r> for UserIdCheck {
+    type Error = ();
+
+    async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        if let Outcome::Success(RoleCheck(claim)) = req.guard::<AdminCheck>().await {
+            return Outcome::Success(Self(claim));
+        } else if let Outcome::Success(RoleCheck(claim)) = req.guard::<UserCheck>().await {
+            if claim.id.0 == req.param::<uuid::Uuid>(0).unwrap().unwrap() {
+                return Outcome::Success(Self(claim));
+            }
+        }
+
+        Outcome::Error((Status::Unauthorized, ()))
+    }
+}
+
+pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
+    let form: NewAccountForm = match rocket.figment().focus("admin").extract() {
+        Err(_e) => return Err(rocket),
+        Ok(form) => form,
+    };
+
+    let id = Uuid(uuid::Uuid::nil());
+    let hash = match bcrypt::hash(form.password.expose_secret(), bcrypt::DEFAULT_COST)
+        .map(SecretString::new)
+        .map(Password)
+    {
+        Err(_e) => return Err(rocket),
+        Ok(hash) => hash,
+    };
+
+    let conn = if let Some(conn) = MetaConn::get_one(&rocket).await {
+        conn
+    } else {
+        return Err(rocket);
+    };
+
+    let res = conn
+        .run(move |c| {
+            use crate::schema::users::dsl;
+
+            diesel::insert_into(dsl::users)
+                .values(User {
+                    id,
+                    email: form.email,
+                    password: hash,
+                    role_flags: Roles::USER | Roles::ADMIN,
+                })
+                .on_conflict(dsl::email)
+                .do_update()
+                .set(dsl::password.eq(excluded(dsl::password)))
+                .execute(c)
+        })
+        .await;
+
+    match res {
+        Err(_e) => Err(rocket),
+        Ok(_) => Ok(rocket),
+    }
 }
