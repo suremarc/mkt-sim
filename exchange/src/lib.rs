@@ -12,6 +12,7 @@ pub mod accountservices;
 pub mod assets;
 #[rustfmt::skip]
 pub mod schema;
+pub mod types;
 
 #[database("meta")]
 pub struct MetaConn(pub diesel::SqliteConnection);
