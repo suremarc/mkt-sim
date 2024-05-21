@@ -141,8 +141,9 @@ struct LoginForm {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct AuthnClaim {
+pub struct AuthnClaim {
     id: Uuid,
+    admin: bool,
     expires: DateTime<Utc>,
 }
 
@@ -171,6 +172,7 @@ async fn login(
 
     let claim = AuthnClaim {
         id: user.id,
+        admin: user.role_flags.contains(Roles::ADMIN),
         expires: chrono::offset::Utc::now() + chrono::Days::new(7),
     };
 
