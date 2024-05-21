@@ -88,7 +88,7 @@ async fn get_account_by_id(conn: MetaConn, id: uuid::Uuid) -> Result<Json<User>,
 
 #[get("/accounts")]
 async fn list_accounts(conn: MetaConn) -> Result<Json<List<User>>, Status> {
-    conn.run(|c| dsl::users.get_results(c))
+    conn.run(|c| dsl::users.load(c))
         .await
         .map(List::from)
         .map(Json)

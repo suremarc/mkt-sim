@@ -1,7 +1,8 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    equities (ticker) {
+    equities (id) {
+        id -> Integer,
         ticker -> Text,
         description -> Nullable<Text>,
     }
@@ -9,8 +10,8 @@ diesel::table! {
 
 diesel::table! {
     equity_options (underlying, expiration_date, contract_type, strike_price, exercise_style) {
-        underlying -> Text,
-        expiration_date -> Text,
+        underlying -> Integer,
+        expiration_date -> Date,
         contract_type -> Text,
         strike_price -> Integer,
         exercise_style -> Text,
