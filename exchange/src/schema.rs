@@ -3,6 +3,7 @@
 diesel::table! {
     equities (id) {
         id -> Integer,
+        created -> Timestamp,
         ticker -> Text,
         description -> Nullable<Text>,
     }
@@ -15,6 +16,7 @@ diesel::table! {
         contract_type -> Text,
         strike_price -> Integer,
         exercise_style -> Text,
+        created -> Timestamp,
     }
 }
 

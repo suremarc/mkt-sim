@@ -14,8 +14,9 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use tigerbeetle_unofficial as tb;
 
-pub mod accountservices;
+pub mod accounts;
 pub mod assets;
+pub mod auth;
 #[rustfmt::skip]
 pub mod schema;
 pub mod types;

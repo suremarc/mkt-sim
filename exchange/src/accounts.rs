@@ -1,28 +1,19 @@
 use bitflags::bitflags;
-use chrono::{DateTime, Utc};
 use diesel::{
     backend::Backend,
     deserialize::{self, FromSql},
     serialize::{self, Output, ToSql},
     sql_types::BigInt,
-    ExpressionMethods, QueryDsl, RunQueryDsl,
+    QueryDsl, RunQueryDsl,
 };
-use jsonwebtoken as jwt;
-use jwt::EncodingKey;
-use rocket::{
-    get,
-    http::{Cookie, CookieJar, Status},
-    post, routes,
-    serde::json::Json,
-    Route,
-};
+use rocket::{get, http::Status, post, routes, serde::json::Json, Route};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     schema::users::dsl,
     types::{Email, Password, Uuid},
-    JwtSecretKey, MetaConn,
+    MetaConn,
 };
 
 use diesel::{
@@ -32,7 +23,7 @@ use diesel::{
 use super::List;
 
 pub fn routes() -> Vec<Route> {
-    routes![register, get_account_by_id, list_accounts, login]
+    routes![register, get_account_by_id, list_accounts]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable)]
@@ -75,7 +66,7 @@ where
     }
 }
 
-#[get("/accounts/<id>")]
+#[get("/<id>")]
 async fn get_account_by_id(conn: MetaConn, id: uuid::Uuid) -> Result<Json<User>, Status> {
     conn.run(move |c| dsl::users.find(Uuid(id)).first(c))
         .await
@@ -86,7 +77,7 @@ async fn get_account_by_id(conn: MetaConn, id: uuid::Uuid) -> Result<Json<User>,
         })
 }
 
-#[get("/accounts")]
+#[get("/")]
 async fn list_accounts(conn: MetaConn) -> Result<Json<List<User>>, Status> {
     conn.run(|c| dsl::users.load(c))
         .await
@@ -103,7 +94,7 @@ struct NewAccountForm {
     admin: bool,
 }
 
-#[post("/register", data = "<form>")]
+#[post("/", data = "<form>")]
 async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<User>, Status> {
     let form = form.0;
 
@@ -132,58 +123,4 @@ async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<Use
         diesel::result::Error::DatabaseError(_, _) => Status::Conflict,
         _ => Status::InternalServerError,
     })
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct LoginForm {
-    email: Email,
-    password: SecretString,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct AuthnClaim {
-    id: Uuid,
-    admin: bool,
-    expires: DateTime<Utc>,
-}
-
-#[post("/login", data = "<form>")]
-async fn login(
-    conn: MetaConn,
-    form: Json<LoginForm>,
-    jar: &CookieJar<'_>,
-    jwt_secret: JwtSecretKey,
-) -> Result<(), Status> {
-    let email = form.email.clone();
-    let user: User = conn
-        .run(move |c| dsl::users.filter(dsl::email.eq(&email)).first(c))
-        .await
-        .map_err(|e| match e {
-            diesel::result::Error::NotFound => Status::NotFound,
-            _ => Status::InternalServerError,
-        })?;
-
-    // check password
-    if !bcrypt::verify(form.password.expose_secret(), user.password.expose_secret())
-        .map_err(|_e| Status::InternalServerError)?
-    {
-        return Err(Status::NotFound);
-    }
-
-    let claim = AuthnClaim {
-        id: user.id,
-        admin: user.role_flags.contains(Roles::ADMIN),
-        expires: chrono::offset::Utc::now() + chrono::Days::new(7),
-    };
-
-    let token = jwt::encode(
-        &jwt::Header::default(),
-        &claim,
-        &EncodingKey::from_secret(jwt_secret.expose_secret().as_bytes()),
-    )
-    .map_err(|_e| Status::InternalServerError)?;
-
-    jar.add(Cookie::new("Authorization", format!("Bearer {token}")));
-
-    Ok(())
 }

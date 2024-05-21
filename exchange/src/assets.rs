@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
 use diesel::{
     backend::Backend,
     deserialize::{FromSql, FromSqlRow},
@@ -11,7 +11,6 @@ use diesel::{
     sql_types::{Integer, Text},
     Connection, ExpressionMethods, QueryDsl, Queryable, RunQueryDsl, Selectable,
 };
-use itertools::Itertools;
 use rocket::{get, http::Status, post, routes, serde::json::Json, Route};
 use serde::{Deserialize, Serialize};
 use strum_macros::{EnumString, IntoStaticStr};
@@ -37,6 +36,7 @@ pub fn routes() -> Vec<Route> {
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Equity {
     pub id: i32,
+    pub created: NaiveDateTime,
     pub ticker: String,
     pub description: Option<String>,
 }
@@ -50,6 +50,7 @@ pub struct EquityOption {
     pub contract_type: ContractType,
     pub strike_price: Mills,
     pub exercise_style: ExerciseStyle,
+    pub created: NaiveDateTime,
 }
 
 #[derive(
@@ -137,16 +138,13 @@ where
     }
 }
 
-#[get("/equities/<ticker>", rank = 1)]
-async fn get_equity_by_ticker(conn: MetaConn, ticker: String) -> Result<Json<Equity>, Status> {
-    use crate::schema::equities::dsl;
-    conn.run(move |c| dsl::equities.filter(dsl::ticker.eq(ticker)).first(c))
+#[get("/equities")]
+async fn list_equities(conn: MetaConn) -> Result<Json<List<Equity>>, Status> {
+    conn.run(|c| crate::schema::equities::dsl::equities.get_results(c))
         .await
+        .map(List::from)
         .map(Json)
-        .map_err(|e| match e {
-            diesel::result::Error::NotFound => Status::NotFound,
-            _ => Status::InternalServerError,
-        })
+        .map_err(|_e| Status::InternalServerError)
 }
 
 #[get("/equities/<id>", rank = 0)]
@@ -160,13 +158,16 @@ async fn get_equity_by_id(conn: MetaConn, id: i32) -> Result<Json<Equity>, Statu
         })
 }
 
-#[get("/equities")]
-async fn list_equities(conn: MetaConn) -> Result<Json<List<Equity>>, Status> {
-    conn.run(|c| crate::schema::equities::dsl::equities.get_results(c))
+#[get("/equities/<ticker>", rank = 1)]
+async fn get_equity_by_ticker(conn: MetaConn, ticker: String) -> Result<Json<Equity>, Status> {
+    use crate::schema::equities::dsl;
+    conn.run(move |c| dsl::equities.filter(dsl::ticker.eq(ticker)).first(c))
         .await
-        .map(List::from)
         .map(Json)
-        .map_err(|_e| Status::InternalServerError)
+        .map_err(|e| match e {
+            diesel::result::Error::NotFound => Status::NotFound,
+            _ => Status::InternalServerError,
+        })
 }
 
 #[derive(Debug, Clone, Deserialize, Insertable)]
@@ -184,39 +185,31 @@ async fn create_equities(
     conn: MetaConn,
     form: Json<List<CreateEquityForm>>,
 ) -> Result<Json<List<Equity>>, Status> {
-    let items = form.items.clone();
-    let last_id: i32 = conn
-        .run(move |c| {
-            use crate::schema::equities::dsl::*;
+    conn.run(move |c| {
+        use crate::schema::equities::dsl::*;
 
-            c.transaction(|c| {
-                diesel::insert_into(equities).values(items).execute(c)?;
-                diesel::select(last_insert_rowid()).get_result(c)
-            })
+        c.transaction(|c| {
+            let n = form.items.len();
+            diesel::insert_into(equities)
+                .values(form.0.items)
+                .execute(c)?;
+            equities
+                .order(id.desc())
+                .limit(n as i64)
+                .order(id.asc())
+                .get_results(c)
         })
-        .await
-        .map_err(|e| match e {
-            diesel::result::Error::DatabaseError(_, _) => Status::Conflict,
-            _ => Status::InternalServerError,
-        })?;
-
-    let start_id = last_id - form.items.len() as i32;
-
-    Ok(Json(List::from(
-        form.0
-            .items
-            .into_iter()
-            .enumerate()
-            .map(|(i, item)| Equity {
-                id: start_id + i as i32 + 1,
-                ticker: item.ticker,
-                description: item.description,
-            })
-            .collect_vec(),
-    )))
+    })
+    .await
+    .map(List::from)
+    .map(Json)
+    .map_err(|e| match e {
+        diesel::result::Error::DatabaseError(_, _) => Status::Conflict,
+        _ => Status::InternalServerError,
+    })
 }
 
-#[post("/equity-options", data = "<form>")]
+#[post("/equities/options", data = "<form>")]
 async fn create_equity_options(
     conn: MetaConn,
     form: Json<List<EquityOption>>,
@@ -236,7 +229,35 @@ async fn create_equity_options(
     Ok(())
 }
 
-#[get("/equity-options/<ticker>", rank = 1)]
+#[get("/equities/<id>/options", rank = 0)]
+async fn list_equity_options_by_underlying_id(
+    conn: MetaConn,
+    id: i32,
+) -> Result<Json<List<EquityOption>>, Status> {
+    conn.run(move |c| {
+        use crate::schema::equity_options::dsl::*;
+        equity_options
+            .filter(underlying.eq(id))
+            .select((
+                underlying,
+                expiration_date,
+                contract_type,
+                strike_price,
+                exercise_style,
+                created,
+            ))
+            .load(c)
+    })
+    .await
+    .map(List::from)
+    .map(Json)
+    .map_err(|e| match e {
+        diesel::result::Error::NotFound => Status::NotFound,
+        _ => Status::InternalServerError,
+    })
+}
+
+#[get("/equities/<ticker>/options", rank = 1)]
 async fn list_equity_options_by_underlying_ticker(
     conn: MetaConn,
     ticker: String,
@@ -256,34 +277,7 @@ async fn list_equity_options_by_underlying_ticker(
                 contract_type,
                 strike_price,
                 exercise_style,
-            ))
-            .load(c)
-    })
-    .await
-    .map(List::from)
-    .map(Json)
-    .map_err(|e| match e {
-        diesel::result::Error::NotFound => Status::NotFound,
-        _ => Status::InternalServerError,
-    })
-}
-
-#[get("/equity-options/<id>", rank = 0)]
-async fn list_equity_options_by_underlying_id(
-    conn: MetaConn,
-    id: i32,
-) -> Result<Json<List<EquityOption>>, Status> {
-    conn.run(move |c| {
-        use crate::schema::equity_options::dsl::*;
-        equity_options
-            .inner_join(crate::schema::equities::dsl::equities)
-            .filter(underlying.eq(id))
-            .select((
-                underlying,
-                expiration_date,
-                contract_type,
-                strike_price,
-                exercise_style,
+                created,
             ))
             .load(c)
     })

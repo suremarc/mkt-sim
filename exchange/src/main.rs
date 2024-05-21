@@ -1,4 +1,4 @@
-use exchange::{accountservices, assets, Accounting, MetaConn};
+use exchange::{accounts, assets, auth, Accounting, MetaConn};
 use rocket::launch;
 use rocket_db_pools::Database;
 
@@ -8,5 +8,6 @@ fn rocket() -> _ {
         .attach(MetaConn::fairing())
         .attach(Accounting::init())
         .mount("/assets/", assets::routes())
-        .mount("/accountservices", accountservices::routes())
+        .mount("/accounts", accounts::routes())
+        .mount("/auth", auth::routes())
 }
