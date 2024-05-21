@@ -1,6 +1,7 @@
 use core::fmt;
 use std::{
     fmt::{Display, Formatter},
+    ops::Deref,
     str::FromStr,
 };
 
@@ -9,44 +10,72 @@ use diesel::{
     deserialize::{self, FromSql, FromSqlRow},
     expression::AsExpression,
     serialize::{self, Output, ToSql},
-    sql_types::Binary,
+    sql_types::{Binary, Text},
 };
 use email_address::EmailAddress;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, AsExpression, FromSqlRow)]
 #[serde(transparent)]
-pub struct Password(SecretString);
+#[diesel(sql_type = Text)]
+pub struct Password(pub SecretString);
 
-impl From<String> for Password {
-    fn from(value: String) -> Self {
-        Self(SecretString::new(value))
+impl Deref for Password {
+    type Target = SecretString;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
-impl From<Password> for String {
-    fn from(value: Password) -> Self {
-        value.0.expose_secret().clone()
+impl<B: Backend> FromSql<Text, B> for Password
+where
+    String: FromSql<Text, B>,
+{
+    fn from_sql(bytes: <B as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        String::from_sql(bytes).map(SecretString::new).map(Self)
+    }
+}
+
+impl<B: Backend> ToSql<Text, B> for Password
+where
+    str: ToSql<Text, B>,
+{
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, B>) -> serialize::Result {
+        self.0.expose_secret().as_str().to_sql(out)
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromSqlRow, AsExpression, Hash, Eq, PartialEq)]
 #[serde(transparent)]
-#[diesel(sql_type = Binary)]
+#[diesel(sql_type = Text)]
 pub struct Email(EmailAddress);
 
-impl TryFrom<String> for Email {
-    type Error = email_address::Error;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        EmailAddress::from_str(&value).map(Self)
+impl Display for Email {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
-impl From<Email> for String {
-    fn from(value: Email) -> Self {
-        value.0.into()
+impl<B: Backend> FromSql<Text, B> for Email
+where
+    String: FromSql<Text, B>,
+{
+    fn from_sql(bytes: <B as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        let value = String::from_sql(bytes)?;
+        EmailAddress::from_str(&value)
+            .map(Self)
+            .map_err(|e| e.into())
+    }
+}
+
+impl<B: Backend> ToSql<Text, B> for Email
+where
+    str: ToSql<Text, B>,
+{
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, B>) -> serialize::Result {
+        self.0.as_str().to_sql(out)
     }
 }
 

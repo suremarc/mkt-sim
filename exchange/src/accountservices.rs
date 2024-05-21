@@ -1,10 +1,17 @@
 use bitflags::bitflags;
-use diesel::{sql_types::BigInt, QueryDsl, RunQueryDsl};
+use diesel::{
+    backend::Backend,
+    deserialize::{self, FromSql},
+    serialize::{self, Output, ToSql},
+    sql_types::BigInt,
+    ExpressionMethods, QueryDsl, RunQueryDsl,
+};
 use rocket::{get, http::Status, post, routes, serde::json::Json, Route};
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    schema::users::dsl::users,
+    schema::users::dsl::{self},
     types::{Email, Password, Uuid},
     MetaConn,
 };
@@ -16,7 +23,7 @@ use diesel::{
 use super::List;
 
 pub fn routes() -> Vec<Route> {
-    routes![register, get_account_by_id, list_accounts]
+    routes![register, get_account_by_id, list_accounts, login]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable)]
@@ -24,18 +31,15 @@ pub fn routes() -> Vec<Route> {
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct User {
     pub id: Uuid,
-    #[diesel(serialize_as = String, deserialize_as = String)]
     pub email: Email,
     #[serde(skip_serializing)]
-    #[diesel(serialize_as = String, deserialize_as = String)]
     pub password: Password,
-    #[diesel(serialize_as = i64, deserialize_as = i64)]
     #[serde(rename = "roles")]
     pub role_flags: Roles,
 }
 
 bitflags! {
-    #[derive(Debug, Clone, Serialize, Deserialize, FromSqlRow, AsExpression, Hash, Eq, PartialEq)]
+    #[derive(Debug, Clone, Copy, Serialize, Deserialize, FromSqlRow, AsExpression, Hash, Eq, PartialEq)]
     #[repr(transparent)]
     #[diesel(sql_type = BigInt)]
     pub struct Roles: i64 {
@@ -44,21 +48,27 @@ bitflags! {
     }
 }
 
-impl From<i64> for Roles {
-    fn from(value: i64) -> Self {
-        Self::from_bits_truncate(value)
+impl<B: Backend> FromSql<BigInt, B> for Roles
+where
+    i64: FromSql<BigInt, B>,
+{
+    fn from_sql(bytes: <B as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
+        i64::from_sql(bytes).map(Self::from_bits_truncate)
     }
 }
 
-impl From<Roles> for i64 {
-    fn from(value: Roles) -> Self {
-        value.bits()
+impl<B: Backend> ToSql<BigInt, B> for Roles
+where
+    i64: ToSql<BigInt, B>,
+{
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, B>) -> serialize::Result {
+        i64::to_sql(self.0.as_ref(), out)
     }
 }
 
 #[get("/accounts/<id>")]
 async fn get_account_by_id(conn: MetaConn, id: uuid::Uuid) -> Result<Json<User>, Status> {
-    conn.run(move |c| users.find(Uuid(id)).first::<User>(c))
+    conn.run(move |c| dsl::users.find(Uuid(id)).first(c))
         .await
         .map(Json)
         .map_err(|e| match e {
@@ -69,17 +79,17 @@ async fn get_account_by_id(conn: MetaConn, id: uuid::Uuid) -> Result<Json<User>,
 
 #[get("/accounts")]
 async fn list_accounts(conn: MetaConn) -> Result<Json<List<User>>, Status> {
-    conn.run(|c| users.get_results(c))
+    conn.run(|c| dsl::users.get_results(c))
         .await
         .map(List::from)
         .map(Json)
         .map_err(|_e| Status::InternalServerError)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct NewAccountForm {
     email: Email,
-    password: String,
+    password: SecretString,
     #[serde(default)]
     admin: bool,
 }
@@ -89,18 +99,20 @@ async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<Use
     let form = form.0;
 
     let id = Uuid(uuid::Uuid::new_v4());
-    let hash = bcrypt::hash(&form.password, bcrypt::DEFAULT_COST)
+    let hash = bcrypt::hash(form.password.expose_secret(), bcrypt::DEFAULT_COST)
+        .map(SecretString::new)
+        .map(Password)
         .map_err(|_e| Status::InternalServerError)?;
 
     let mut role_flags = Roles::USER;
     role_flags.set(Roles::ADMIN, form.admin);
 
     conn.run(move |c| {
-        diesel::insert_into(users)
+        diesel::insert_into(dsl::users)
             .values(User {
                 id,
                 email: form.email,
-                password: hash.into(),
+                password: hash,
                 role_flags,
             })
             .get_result(c)
@@ -111,4 +123,33 @@ async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<Use
         diesel::result::Error::DatabaseError(_, _) => Status::Conflict,
         _ => Status::InternalServerError,
     })
+}
+
+#[derive(Deserialize)]
+struct LoginForm {
+    email: Email,
+    password: SecretString,
+}
+
+#[post("/login", data = "<form>")]
+async fn login(conn: MetaConn, form: Json<LoginForm>) -> Result<(), Status> {
+    let email = form.email.clone();
+    let user: User = conn
+        .run(move |c| dsl::users.filter(dsl::email.eq(&email)).first(c))
+        .await
+        .map_err(|e| match e {
+            diesel::result::Error::NotFound => Status::NotFound,
+            _ => Status::InternalServerError,
+        })?;
+
+    // check password
+    if !bcrypt::verify(form.password.expose_secret(), user.password.expose_secret())
+        .map_err(|_e| Status::InternalServerError)?
+    {
+        return Err(Status::NotFound);
+    }
+
+    // todo: jwt
+
+    Ok(())
 }
