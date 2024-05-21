@@ -1,5 +1,6 @@
-[default.databases.meta]
-url = "data.db"
+[debug.databases]
+meta = { url = "data.db" }
+accounting = { url = "127.0.0.1:3000" }
 
-[default.databases.accounting]
-url = "127.0.0.1:3000"
+[debug.jwt]
+token = "b76aed65657602cbc44f26284ef076d9f0a548ef547282ff0500338a60a5bfac"

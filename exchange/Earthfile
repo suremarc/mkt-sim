@@ -28,8 +28,10 @@ copy-src:
 diesel-setup:
     FROM +copy-src
     COPY .env ./
+    ARG DATABASE_PATH=data.db
+    ENV DATABASE_URL=sqlite://$DATABASE_PATH
     RUN diesel setup
-    SAVE ARTIFACT data.db AS LOCAL data.db
+    SAVE ARTIFACT $DATABASE_PATH AS LOCAL $DATABASE_PATH
     SAVE ARTIFACT src/schema.rs AS LOCAL src/schema.rs
 
 build-debug:

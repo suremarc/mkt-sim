@@ -3,8 +3,14 @@
 use std::{ops::Deref, sync::Arc};
 
 use figment::Figment;
+use rocket::{
+    http::Status,
+    request::{FromRequest, Outcome},
+    Request,
+};
 use rocket_db_pools::{Database, Pool};
 use rocket_sync_db_pools::database;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use tigerbeetle_unofficial as tb;
 
@@ -77,6 +83,28 @@ impl<T> From<Vec<T>> for List<T> {
         Self {
             count: value.len(),
             items: value,
+        }
+    }
+}
+
+pub struct JwtSecretKey(SecretString);
+
+impl Deref for JwtSecretKey {
+    type Target = SecretString;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[async_trait::async_trait]
+impl<'r> FromRequest<'r> for JwtSecretKey {
+    type Error = figment::Error;
+
+    async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        match req.rocket().figment().extract_inner("jwt.token") {
+            Err(e) => Outcome::Error((Status::InternalServerError, e)),
+            Ok(r) => Outcome::Success(JwtSecretKey(r)),
         }
     }
 }

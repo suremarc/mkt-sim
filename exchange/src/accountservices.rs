@@ -1,4 +1,5 @@
 use bitflags::bitflags;
+use chrono::{DateTime, Utc};
 use diesel::{
     backend::Backend,
     deserialize::{self, FromSql},
@@ -6,14 +7,22 @@ use diesel::{
     sql_types::BigInt,
     ExpressionMethods, QueryDsl, RunQueryDsl,
 };
-use rocket::{get, http::Status, post, routes, serde::json::Json, Route};
+use jsonwebtoken as jwt;
+use jwt::EncodingKey;
+use rocket::{
+    get,
+    http::{Cookie, CookieJar, Status},
+    post, routes,
+    serde::json::Json,
+    Route,
+};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    schema::users::dsl::{self},
+    schema::users::dsl,
     types::{Email, Password, Uuid},
-    MetaConn,
+    JwtSecretKey, MetaConn,
 };
 
 use diesel::{
@@ -125,14 +134,25 @@ async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<Use
     })
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct LoginForm {
     email: Email,
     password: SecretString,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct AuthnClaim {
+    id: Uuid,
+    expires: DateTime<Utc>,
+}
+
 #[post("/login", data = "<form>")]
-async fn login(conn: MetaConn, form: Json<LoginForm>) -> Result<(), Status> {
+async fn login(
+    conn: MetaConn,
+    form: Json<LoginForm>,
+    jar: &CookieJar<'_>,
+    jwt_secret: JwtSecretKey,
+) -> Result<(), Status> {
     let email = form.email.clone();
     let user: User = conn
         .run(move |c| dsl::users.filter(dsl::email.eq(&email)).first(c))
@@ -149,7 +169,19 @@ async fn login(conn: MetaConn, form: Json<LoginForm>) -> Result<(), Status> {
         return Err(Status::NotFound);
     }
 
-    // todo: jwt
+    let claim = AuthnClaim {
+        id: user.id,
+        expires: chrono::offset::Utc::now() + chrono::Days::new(7),
+    };
+
+    let token = jwt::encode(
+        &jwt::Header::default(),
+        &claim,
+        &EncodingKey::from_secret(jwt_secret.expose_secret().as_bytes()),
+    )
+    .map_err(|_e| Status::InternalServerError)?;
+
+    jar.add(Cookie::new("Authorization", format!("Bearer {token}")));
 
     Ok(())
 }
