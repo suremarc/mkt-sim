@@ -7,8 +7,9 @@ use diesel::{
     expression::AsExpression,
     prelude::Insertable,
     serialize::{Output, ToSql},
+    sql_function,
     sql_types::{Integer, Text},
-    ExpressionMethods, QueryDsl, Queryable, RunQueryDsl, Selectable,
+    Connection, ExpressionMethods, QueryDsl, Queryable, RunQueryDsl, Selectable,
 };
 use itertools::Itertools;
 use rocket::{get, http::Status, post, routes, serde::json::Json, Route};
@@ -21,11 +22,11 @@ use super::List;
 
 pub fn routes() -> Vec<Route> {
     routes![
-        create_equity,
+        create_equities,
         get_equity_by_id,
         get_equity_by_ticker,
         list_equities,
-        create_equity_option,
+        create_equity_options,
         list_equity_options_by_underlying_ticker,
         list_equity_options_by_underlying_id
     ]
@@ -176,44 +177,22 @@ struct CreateEquityForm {
     pub description: Option<String>,
 }
 
+sql_function!(fn last_insert_rowid() -> Integer);
+
 #[post("/equities", data = "<form>")]
-async fn create_equity(
+async fn create_equities(
     conn: MetaConn,
-    form: Json<CreateEquityForm>,
-) -> Result<Json<Equity>, Status> {
-    conn.run(move |c| {
-        diesel::insert_into(crate::schema::equities::dsl::equities)
-            .values(form.0)
-            .get_result(c)
-    })
-    .await
-    .map(Json)
-    .map_err(|e| match e {
-        diesel::result::Error::DatabaseError(_, _) => Status::Conflict,
-        _ => Status::InternalServerError,
-    })
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct EquityOptionResponse {
-    pub ticker: String,
-    #[serde(flatten)]
-    pub option: EquityOption,
-}
-
-#[post("/equity-options", data = "<form>")]
-async fn create_equity_option(
-    conn: MetaConn,
-    form: Json<EquityOption>,
-) -> Result<Json<EquityOptionResponse>, Status> {
-    let underlying = form.underlying;
-
-    let option = conn
+    form: Json<List<CreateEquityForm>>,
+) -> Result<Json<List<Equity>>, Status> {
+    let items = form.items.clone();
+    let last_id: i32 = conn
         .run(move |c| {
-            use crate::schema::equity_options::dsl::*;
-            diesel::insert_into(equity_options)
-                .values(&form.0)
-                .get_result(c)
+            use crate::schema::equities::dsl::*;
+
+            c.transaction(|c| {
+                diesel::insert_into(equities).values(items).execute(c)?;
+                diesel::select(last_insert_rowid()).get_result(c)
+            })
         })
         .await
         .map_err(|e| match e {
@@ -221,77 +200,98 @@ async fn create_equity_option(
             _ => Status::InternalServerError,
         })?;
 
-    let ticker = conn
-        .run(move |c| {
-            use crate::schema::equities::dsl::*;
-            equities.select(ticker).find(underlying).first(c)
-        })
-        .await
-        .map_err(|e| match e {
-            diesel::result::Error::NotFound => Status::NotFound,
-            _ => Status::InternalServerError,
-        })?;
+    let start_id = last_id - form.items.len() as i32;
 
-    Ok(Json(EquityOptionResponse { ticker, option }))
+    Ok(Json(List::from(
+        form.0
+            .items
+            .into_iter()
+            .enumerate()
+            .map(|(i, item)| Equity {
+                id: start_id + i as i32 + 1,
+                ticker: item.ticker,
+                description: item.description,
+            })
+            .collect_vec(),
+    )))
+}
+
+#[post("/equity-options", data = "<form>")]
+async fn create_equity_options(
+    conn: MetaConn,
+    form: Json<List<EquityOption>>,
+) -> Result<(), Status> {
+    conn.run(move |c| {
+        use crate::schema::equity_options::dsl::*;
+        diesel::insert_into(equity_options)
+            .values(&form.items)
+            .execute(c)
+    })
+    .await
+    .map_err(|e| match e {
+        diesel::result::Error::DatabaseError(_, _) => Status::Conflict,
+        _ => Status::InternalServerError,
+    })?;
+
+    Ok(())
 }
 
 #[get("/equity-options/<ticker>", rank = 1)]
 async fn list_equity_options_by_underlying_ticker(
     conn: MetaConn,
     ticker: String,
-) -> Result<Json<List<EquityOptionResponse>>, Status> {
-    let results: Vec<(EquityOption, Equity)> = conn
-        .run(move |c| {
-            use crate::schema::equities::dsl;
+) -> Result<Json<List<EquityOption>>, Status> {
+    conn.run(move |c| {
+        use crate::schema::{
+            equities::dsl::{self as equities_dsl, equities},
+            equity_options::dsl::*,
+        };
 
-            crate::schema::equity_options::dsl::equity_options
-                .inner_join(dsl::equities)
-                .filter(dsl::ticker.eq(ticker))
-                .load(c)
-        })
-        .await
-        .map_err(|e| match e {
-            diesel::result::Error::NotFound => Status::NotFound,
-            _ => Status::InternalServerError,
-        })?;
-
-    Ok(Json(List::from(
-        results
-            .into_iter()
-            .map(|(option, underlying)| EquityOptionResponse {
-                ticker: underlying.ticker,
-                option,
-            })
-            .collect_vec(),
-    )))
+        crate::schema::equity_options::dsl::equity_options
+            .inner_join(equities)
+            .filter(equities_dsl::ticker.eq(ticker))
+            .select((
+                underlying,
+                expiration_date,
+                contract_type,
+                strike_price,
+                exercise_style,
+            ))
+            .load(c)
+    })
+    .await
+    .map(List::from)
+    .map(Json)
+    .map_err(|e| match e {
+        diesel::result::Error::NotFound => Status::NotFound,
+        _ => Status::InternalServerError,
+    })
 }
 
 #[get("/equity-options/<id>", rank = 0)]
 async fn list_equity_options_by_underlying_id(
     conn: MetaConn,
     id: i32,
-) -> Result<Json<List<EquityOptionResponse>>, Status> {
-    let results: Vec<(EquityOption, Equity)> = conn
-        .run(move |c| {
-            use crate::schema::equity_options::dsl::*;
-            equity_options
-                .inner_join(crate::schema::equities::dsl::equities)
-                .filter(underlying.eq(id))
-                .load(c)
-        })
-        .await
-        .map_err(|e| match e {
-            diesel::result::Error::NotFound => Status::NotFound,
-            _ => Status::InternalServerError,
-        })?;
-
-    Ok(Json(List::from(
-        results
-            .into_iter()
-            .map(|(option, underlying)| EquityOptionResponse {
-                ticker: underlying.ticker,
-                option,
-            })
-            .collect_vec(),
-    )))
+) -> Result<Json<List<EquityOption>>, Status> {
+    conn.run(move |c| {
+        use crate::schema::equity_options::dsl::*;
+        equity_options
+            .inner_join(crate::schema::equities::dsl::equities)
+            .filter(underlying.eq(id))
+            .select((
+                underlying,
+                expiration_date,
+                contract_type,
+                strike_price,
+                exercise_style,
+            ))
+            .load(c)
+    })
+    .await
+    .map(List::from)
+    .map(Json)
+    .map_err(|e| match e {
+        diesel::result::Error::NotFound => Status::NotFound,
+        _ => Status::InternalServerError,
+    })
 }
