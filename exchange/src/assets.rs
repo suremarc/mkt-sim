@@ -161,6 +161,9 @@ where
     }
 }
 
+/// # Get Equities
+///
+/// List details for all equity assets.
 #[openapi]
 #[get("/equities")]
 async fn list_equities(_check: UserCheck, conn: MetaConn) -> Result<Json<List<Equity>>, Status> {
@@ -171,6 +174,9 @@ async fn list_equities(_check: UserCheck, conn: MetaConn) -> Result<Json<List<Eq
         .map_err(|_e| Status::InternalServerError)
 }
 
+/// # Get Equity
+///
+/// Get details for an equity asset.
 #[openapi]
 #[get("/equities/<id>", rank = 0)]
 async fn get_equity_by_id(
@@ -187,6 +193,9 @@ async fn get_equity_by_id(
         })
 }
 
+/// # Get Equity by Ticker
+///
+/// Get details for an equity asset with the given ticker.
 #[openapi]
 #[get("/equities/<ticker>", rank = 1)]
 async fn get_equity_by_ticker(
@@ -214,6 +223,9 @@ struct CreateEquityForm {
 
 sql_function!(fn last_insert_rowid() -> Integer);
 
+/// # Create Equities
+///
+/// Batch endpoint for registering equities.
 #[openapi]
 #[post("/equities", data = "<form>")]
 async fn create_equities(
@@ -245,6 +257,10 @@ async fn create_equities(
     })
 }
 
+/// # Create Equity Options
+///
+/// Batch endpoint for creating equity options.
+/// The underlying equity asset must be registered already.
 #[openapi]
 #[post("/equities/options", data = "<form>")]
 async fn create_equity_options(
@@ -267,6 +283,9 @@ async fn create_equity_options(
     Ok(())
 }
 
+/// # List Equity Options by Underlying
+///
+/// List all equity options derived from a given underlying equity asset.
 #[openapi]
 #[get("/equities/<id>/options", rank = 0)]
 async fn list_equity_options_by_underlying_id(
@@ -297,6 +316,9 @@ async fn list_equity_options_by_underlying_id(
     })
 }
 
+/// # List Equity Options By Underlying Ticker
+///
+/// List all equity options derived from an underlying equity asset with the given ticker.
 #[openapi]
 #[get("/equities/<ticker>/options", rank = 1)]
 async fn list_equity_options_by_underlying_ticker(

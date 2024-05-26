@@ -22,7 +22,7 @@ use rocket_okapi::{
 };
 use schemars::{
     gen::SchemaGenerator,
-    schema::{InstanceType, SchemaObject},
+    schema::{InstanceType, Metadata, SchemaObject},
     JsonSchema,
 };
 use secrecy::{ExposeSecret, SecretString};
@@ -49,10 +49,12 @@ pub fn routes() -> Vec<Route> {
 #[diesel(table_name = crate::schema::users)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct User {
+    /// A unique user identifier.
     pub id: Uuid,
     pub email: Email,
     #[serde(skip_serializing)]
     pub password: Password,
+    /// A string representation of the user's roles.
     #[serde(rename = "roles")]
     pub role_flags: Roles,
 }
@@ -74,6 +76,10 @@ impl JsonSchema for Roles {
 
     fn json_schema(_gen: &mut SchemaGenerator) -> schemars::schema::Schema {
         schemars::schema::Schema::Object(SchemaObject {
+            metadata: Some(Box::new(Metadata {
+                description: Some("A string representation of a set of roles.".to_string()),
+                ..Default::default()
+            })),
             instance_type: Some(InstanceType::String.into()),
             ..Default::default()
         })
@@ -98,6 +104,9 @@ where
     }
 }
 
+/// # Get account
+///
+/// Fetches a single account by ID.
 #[openapi]
 #[get("/<id>")]
 async fn get_account_by_id(
@@ -114,6 +123,7 @@ async fn get_account_by_id(
         })
 }
 
+/// # List all accounts
 #[openapi]
 #[get("/")]
 async fn list_accounts(_check: AdminCheck, conn: MetaConn) -> Result<Json<List<User>>, Status> {
@@ -130,6 +140,9 @@ struct NewAccountForm {
     password: Password,
 }
 
+/// # Create Account
+///
+/// Create a new account.
 #[openapi]
 #[post("/", data = "<form>")]
 async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<User>, Status> {
