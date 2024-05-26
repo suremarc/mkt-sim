@@ -1,10 +1,10 @@
 use std::ops::Deref;
 
-use chrono::{DateTime, Utc};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use jsonwebtoken as jwt;
 use rocket::{
     http::Status,
+    outcome::{try_outcome, IntoOutcome},
     post,
     request::{FromRequest, Outcome},
     serde::json::Json,
@@ -39,8 +39,6 @@ struct LoginForm {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AuthnClaim {
     pub id: Uuid,
-    pub roles: Roles,
-    pub expires: DateTime<Utc>,
 }
 
 #[openapi]
@@ -68,11 +66,7 @@ async fn login(
         return Err(Status::NotFound);
     }
 
-    let claim = AuthnClaim {
-        id: user.id,
-        roles: user.role_flags,
-        expires: chrono::offset::Utc::now() + chrono::Days::new(7),
-    };
+    let claim = AuthnClaim { id: user.id };
 
     jwt::encode(
         &jwt::Header::default(),
@@ -119,34 +113,24 @@ impl<'r> FromRequest<'r> for AuthnClaim {
     type Error = ();
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        req.guard::<JwtSecretKey>()
-            .await
-            .and_then(|jwt_secret| {
-                if let Some(token) = req
-                    .headers()
-                    .get_one("Authorization")
-                    .and_then(|auth_header| auth_header.strip_prefix("Bearer "))
-                {
-                    let decoding_key =
-                        jwt::DecodingKey::from_secret(jwt_secret.expose_secret().as_bytes());
-                    let validation = jwt::Validation::default();
+        req.guard::<JwtSecretKey>().await.and_then(|jwt_secret| {
+            if let Some(token) = req
+                .headers()
+                .get_one("Authorization")
+                .and_then(|auth_header| auth_header.strip_prefix("Bearer "))
+            {
+                let decoding_key =
+                    jwt::DecodingKey::from_secret(jwt_secret.expose_secret().as_bytes());
+                let validation = jwt::Validation::default();
 
-                    match jwt::decode::<AuthnClaim>(token, &decoding_key, &validation) {
-                        Ok(data) => Outcome::Success(data.claims),
-                        Err(_) => Outcome::Error((Status::Unauthorized, ())),
-                    }
-                } else {
-                    Outcome::Error((Status::Unauthorized, ()))
+                match jwt::decode::<AuthnClaim>(token, &decoding_key, &validation) {
+                    Ok(data) => Outcome::Success(data.claims),
+                    Err(_) => Outcome::Error((Status::Unauthorized, ())),
                 }
-            })
-            .and_then(|claim| {
-                if claim.expires < chrono::offset::Utc::now() {
-                    println!("claim expired");
-                    Outcome::Error((Status::Unauthorized, ()))
-                } else {
-                    Outcome::Success(claim)
-                }
-            })
+            } else {
+                Outcome::Error((Status::Unauthorized, ()))
+            }
+        })
     }
 }
 
@@ -196,14 +180,23 @@ impl<'r, const FLAGS: i64> FromRequest<'r> for RoleCheck<FLAGS> {
     type Error = ();
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let roles = Roles::from_bits_truncate(FLAGS);
+        let required_roles = Roles::from_bits_truncate(FLAGS);
+        let conn = try_outcome!(MetaConn::from_request(req).await);
+        let claim = try_outcome!(req.guard::<AuthnClaim>().await);
 
-        req.guard::<AuthnClaim>().await.and_then(|claim| {
-            if !claim.roles.contains(roles) {
-                Outcome::Error((Status::Unauthorized, ()))
-            } else {
-                Outcome::Success(Self(claim))
-            }
-        })
+        let roles: Roles = try_outcome!(conn
+            .run(move |c| {
+                use crate::schema::users::dsl::*;
+                users.find(claim.id).select(role_flags).get_result(c)
+            })
+            .await
+            .map_err(|_e| {})
+            .or_error(Status::InternalServerError));
+
+        if !roles.contains(required_roles) {
+            Outcome::Error((Status::Unauthorized, ()))
+        } else {
+            Outcome::Success(Self(claim))
+        }
     }
 }
