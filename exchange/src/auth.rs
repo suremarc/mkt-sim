@@ -39,6 +39,7 @@ struct LoginForm {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AuthnClaim {
     pub id: Uuid,
+    pub exp: u64,
 }
 
 #[openapi]
@@ -66,7 +67,10 @@ async fn login(
         return Err(Status::NotFound);
     }
 
-    let claim = AuthnClaim { id: user.id };
+    let claim = AuthnClaim {
+        id: user.id,
+        exp: chrono::offset::Utc::now().timestamp() as u64,
+    };
 
     jwt::encode(
         &jwt::Header::default(),
@@ -123,10 +127,12 @@ impl<'r> FromRequest<'r> for AuthnClaim {
                     jwt::DecodingKey::from_secret(jwt_secret.expose_secret().as_bytes());
                 let validation = jwt::Validation::default();
 
-                match jwt::decode::<AuthnClaim>(token, &decoding_key, &validation) {
-                    Ok(data) => Outcome::Success(data.claims),
-                    Err(_) => Outcome::Error((Status::Unauthorized, ())),
-                }
+                jwt::decode::<AuthnClaim>(token, &decoding_key, &validation)
+                    .map(|token| token.claims)
+                    .map_err(|e| {
+                        println!("{e}");
+                    })
+                    .or_error(Status::Unauthorized)
             } else {
                 Outcome::Error((Status::Unauthorized, ()))
             }
@@ -181,8 +187,8 @@ impl<'r, const FLAGS: i64> FromRequest<'r> for RoleCheck<FLAGS> {
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let required_roles = Roles::from_bits_truncate(FLAGS);
-        let conn = try_outcome!(MetaConn::from_request(req).await);
         let claim = try_outcome!(req.guard::<AuthnClaim>().await);
+        let conn = try_outcome!(MetaConn::from_request(req).await);
 
         let roles: Roles = try_outcome!(conn
             .run(move |c| {

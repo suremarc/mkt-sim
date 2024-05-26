@@ -27,7 +27,6 @@ copy-src:
 
 diesel-setup:
     FROM +copy-src
-    COPY .env ./
     ARG DATABASE_PATH=data.db
     ENV DATABASE_URL=sqlite://$DATABASE_PATH
     RUN diesel setup
