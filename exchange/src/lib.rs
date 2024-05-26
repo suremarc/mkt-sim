@@ -3,14 +3,13 @@
 use std::{ops::Deref, sync::Arc};
 
 use figment::Figment;
-use rocket::{
-    http::Status,
-    request::{FromRequest, Outcome},
-    Request,
-};
 use rocket_db_pools::{Database, Pool};
+use rocket_okapi::{
+    gen::OpenApiGenerator,
+    request::{OpenApiFromRequest, RequestHeaderInput},
+};
 use rocket_sync_db_pools::database;
-use secrecy::SecretString;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tigerbeetle_unofficial as tb;
 
@@ -23,6 +22,16 @@ pub mod types;
 
 #[database("meta")]
 pub struct MetaConn(pub diesel::SqliteConnection);
+
+impl<'r> OpenApiFromRequest<'r> for MetaConn {
+    fn from_request_input(
+        _gen: &mut OpenApiGenerator,
+        _name: String,
+        _required: bool,
+    ) -> rocket_okapi::Result<RequestHeaderInput> {
+        Ok(RequestHeaderInput::None)
+    }
+}
 
 #[derive(Database)]
 #[database("accounting")]
@@ -68,7 +77,7 @@ impl Pool for AccountingPool {
     async fn close(&self) {}
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct List<T> {
     #[serde(default, skip_serializing_if = "is_zero")]
     pub count: usize,
@@ -84,28 +93,6 @@ impl<T> From<Vec<T>> for List<T> {
         Self {
             count: value.len(),
             items: value,
-        }
-    }
-}
-
-pub struct JwtSecretKey(SecretString);
-
-impl Deref for JwtSecretKey {
-    type Target = SecretString;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[async_trait::async_trait]
-impl<'r> FromRequest<'r> for JwtSecretKey {
-    type Error = ();
-
-    async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        match req.rocket().figment().extract_inner("jwt.token") {
-            Err(_e) => Outcome::Error((Status::InternalServerError, ())),
-            Ok(r) => Outcome::Success(JwtSecretKey(r)),
         }
     }
 }

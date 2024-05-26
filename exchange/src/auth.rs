@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use chrono::{DateTime, Utc};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use jsonwebtoken as jwt;
@@ -5,27 +7,33 @@ use rocket::{
     http::Status,
     post,
     request::{FromRequest, Outcome},
-    routes,
     serde::json::Json,
     Request, Route,
 };
+use rocket_okapi::{
+    gen::OpenApiGenerator,
+    okapi::openapi3::{SecurityRequirement, SecurityScheme, SecuritySchemeData},
+    openapi, openapi_get_routes,
+    request::{OpenApiFromRequest, RequestHeaderInput},
+};
+use schemars::JsonSchema;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     accounts::{Roles, User},
-    types::{Email, Uuid},
-    JwtSecretKey, MetaConn,
+    types::{Email, Password, Uuid},
+    MetaConn,
 };
 
 pub fn routes() -> Vec<Route> {
-    routes![login]
+    openapi_get_routes![login]
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 struct LoginForm {
     email: Email,
-    password: SecretString,
+    password: Password,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -35,6 +43,7 @@ pub struct AuthnClaim {
     pub expires: DateTime<Utc>,
 }
 
+#[openapi]
 #[post("/session", data = "<form>")]
 async fn login(
     conn: MetaConn,
@@ -73,6 +82,51 @@ async fn login(
     .map_err(|_e| Status::InternalServerError)
 }
 
+pub struct JwtSecretKey(SecretString);
+
+impl Deref for JwtSecretKey {
+    type Target = SecretString;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[async_trait::async_trait]
+impl<'r> FromRequest<'r> for JwtSecretKey {
+    type Error = ();
+
+    async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        match req.rocket().figment().extract_inner("jwt.token") {
+            Err(_e) => Outcome::Error((Status::InternalServerError, ())),
+            Ok(r) => Outcome::Success(JwtSecretKey(r)),
+        }
+    }
+}
+
+impl<'r> OpenApiFromRequest<'r> for JwtSecretKey {
+    fn from_request_input(
+        _gen: &mut OpenApiGenerator,
+        _name: String,
+        _required: bool,
+    ) -> rocket_okapi::Result<RequestHeaderInput> {
+        let mut requirements = SecurityRequirement::new();
+        requirements.insert("token".to_string(), vec![]);
+        Ok(RequestHeaderInput::Security(
+            "token".to_string(),
+            SecurityScheme {
+                description: None,
+                data: SecuritySchemeData::Http {
+                    scheme: "Bearer".to_string(),
+                    bearer_format: None,
+                },
+                extensions: Default::default(),
+            },
+            requirements,
+        ))
+    }
+}
+
 #[async_trait::async_trait]
 impl<'r> FromRequest<'r> for AuthnClaim {
     type Error = ();
@@ -109,6 +163,16 @@ impl<'r> FromRequest<'r> for AuthnClaim {
 }
 
 pub struct RoleCheck<const FLAGS: i64>(pub AuthnClaim);
+
+impl<'r, const FLAGS: i64> OpenApiFromRequest<'r> for RoleCheck<FLAGS> {
+    fn from_request_input(
+        gen: &mut OpenApiGenerator,
+        name: String,
+        required: bool,
+    ) -> rocket_okapi::Result<RequestHeaderInput> {
+        JwtSecretKey::from_request_input(gen, name, required)
+    }
+}
 
 const ADMIN: i64 = Roles::ADMIN.bits();
 const USER: i64 = Roles::USER.bits();

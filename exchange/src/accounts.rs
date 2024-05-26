@@ -12,15 +12,24 @@ use rocket::{
     http::Status,
     post,
     request::{FromRequest, Outcome},
-    routes,
     serde::json::Json,
     Build, Request, Rocket, Route,
+};
+use rocket_okapi::{
+    gen::OpenApiGenerator,
+    openapi, openapi_get_routes,
+    request::{OpenApiFromRequest, RequestHeaderInput},
+};
+use schemars::{
+    gen::SchemaGenerator,
+    schema::{InstanceType, SchemaObject},
+    JsonSchema,
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::{AdminCheck, AuthnClaim, RoleCheck, UserCheck},
+    auth::{AdminCheck, AuthnClaim, JwtSecretKey, RoleCheck, UserCheck},
     schema::users::dsl,
     types::{Email, Password, Uuid},
     MetaConn,
@@ -33,10 +42,10 @@ use diesel::{
 use super::List;
 
 pub fn routes() -> Vec<Route> {
-    routes![register, get_account_by_id, list_accounts]
+    openapi_get_routes![register, get_account_by_id, list_accounts]
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable)]
+#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable, JsonSchema)]
 #[diesel(table_name = crate::schema::users)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct User {
@@ -58,6 +67,19 @@ bitflags! {
     }
 }
 
+impl JsonSchema for Roles {
+    fn schema_name() -> String {
+        "Roles".to_string()
+    }
+
+    fn json_schema(_gen: &mut SchemaGenerator) -> schemars::schema::Schema {
+        schemars::schema::Schema::Object(SchemaObject {
+            instance_type: Some(InstanceType::String.into()),
+            ..Default::default()
+        })
+    }
+}
+
 impl<B: Backend> FromSql<BigInt, B> for Roles
 where
     i64: FromSql<BigInt, B>,
@@ -76,6 +98,7 @@ where
     }
 }
 
+#[openapi]
 #[get("/<id>")]
 async fn get_account_by_id(
     _check: UserIdCheck,
@@ -91,6 +114,7 @@ async fn get_account_by_id(
         })
 }
 
+#[openapi]
 #[get("/")]
 async fn list_accounts(_check: AdminCheck, conn: MetaConn) -> Result<Json<List<User>>, Status> {
     conn.run(|c| dsl::users.load(c))
@@ -100,12 +124,13 @@ async fn list_accounts(_check: AdminCheck, conn: MetaConn) -> Result<Json<List<U
         .map_err(|_e| Status::InternalServerError)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 struct NewAccountForm {
     email: Email,
-    password: SecretString,
+    password: Password,
 }
 
+#[openapi]
 #[post("/", data = "<form>")]
 async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<User>, Status> {
     let form = form.0;
@@ -151,6 +176,16 @@ impl<'r> FromRequest<'r> for UserIdCheck {
         }
 
         Outcome::Error((Status::Unauthorized, ()))
+    }
+}
+
+impl<'r> OpenApiFromRequest<'r> for UserIdCheck {
+    fn from_request_input(
+        gen: &mut OpenApiGenerator,
+        name: String,
+        required: bool,
+    ) -> rocket_okapi::Result<RequestHeaderInput> {
+        JwtSecretKey::from_request_input(gen, name, required)
     }
 }
 

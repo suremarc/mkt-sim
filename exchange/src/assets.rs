@@ -11,7 +11,9 @@ use diesel::{
     sql_types::{Integer, Text},
     Connection, ExpressionMethods, QueryDsl, Queryable, RunQueryDsl, Selectable,
 };
-use rocket::{get, http::Status, post, routes, serde::json::Json, Route};
+use rocket::{get, http::Status, post, serde::json::Json, Route};
+use rocket_okapi::{openapi, openapi_get_routes};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum_macros::{EnumString, IntoStaticStr};
 
@@ -23,7 +25,7 @@ use crate::{
 use super::List;
 
 pub fn routes() -> Vec<Route> {
-    routes![
+    openapi_get_routes![
         create_equities,
         get_equity_by_id,
         get_equity_by_ticker,
@@ -34,7 +36,7 @@ pub fn routes() -> Vec<Route> {
     ]
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable)]
+#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, JsonSchema)]
 #[diesel(table_name = crate::schema::equities)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Equity {
@@ -44,7 +46,7 @@ pub struct Equity {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable)]
+#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable, JsonSchema)]
 #[diesel(table_name = crate::schema::equity_options)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct EquityOption {
@@ -57,7 +59,16 @@ pub struct EquityOption {
 }
 
 #[derive(
-    Debug, Clone, Copy, Deserialize, Serialize, FromSqlRow, AsExpression, EnumString, IntoStaticStr,
+    Debug,
+    Clone,
+    Copy,
+    Deserialize,
+    Serialize,
+    FromSqlRow,
+    AsExpression,
+    EnumString,
+    IntoStaticStr,
+    JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -87,7 +98,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, FromSqlRow, AsExpression)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, FromSqlRow, AsExpression, JsonSchema)]
 #[serde(transparent)]
 #[diesel(sql_type = Integer)]
 pub struct Mills(pub i32);
@@ -111,7 +122,16 @@ where
 }
 
 #[derive(
-    Debug, Clone, Copy, Deserialize, Serialize, FromSqlRow, AsExpression, EnumString, IntoStaticStr,
+    Debug,
+    Clone,
+    Copy,
+    Deserialize,
+    Serialize,
+    FromSqlRow,
+    AsExpression,
+    EnumString,
+    IntoStaticStr,
+    JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -141,6 +161,7 @@ where
     }
 }
 
+#[openapi]
 #[get("/equities")]
 async fn list_equities(_check: UserCheck, conn: MetaConn) -> Result<Json<List<Equity>>, Status> {
     conn.run(|c| crate::schema::equities::dsl::equities.get_results(c))
@@ -150,6 +171,7 @@ async fn list_equities(_check: UserCheck, conn: MetaConn) -> Result<Json<List<Eq
         .map_err(|_e| Status::InternalServerError)
 }
 
+#[openapi]
 #[get("/equities/<id>", rank = 0)]
 async fn get_equity_by_id(
     _check: UserCheck,
@@ -165,6 +187,7 @@ async fn get_equity_by_id(
         })
 }
 
+#[openapi]
 #[get("/equities/<ticker>", rank = 1)]
 async fn get_equity_by_ticker(
     _check: UserCheck,
@@ -181,7 +204,7 @@ async fn get_equity_by_ticker(
         })
 }
 
-#[derive(Debug, Clone, Deserialize, Insertable)]
+#[derive(Debug, Clone, Deserialize, Insertable, JsonSchema)]
 #[diesel(table_name = crate::schema::equities)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 struct CreateEquityForm {
@@ -191,6 +214,7 @@ struct CreateEquityForm {
 
 sql_function!(fn last_insert_rowid() -> Integer);
 
+#[openapi]
 #[post("/equities", data = "<form>")]
 async fn create_equities(
     _check: AdminCheck,
@@ -221,6 +245,7 @@ async fn create_equities(
     })
 }
 
+#[openapi]
 #[post("/equities/options", data = "<form>")]
 async fn create_equity_options(
     _check: AdminCheck,
@@ -242,6 +267,7 @@ async fn create_equity_options(
     Ok(())
 }
 
+#[openapi]
 #[get("/equities/<id>/options", rank = 0)]
 async fn list_equity_options_by_underlying_id(
     _check: UserCheck,
@@ -271,6 +297,7 @@ async fn list_equity_options_by_underlying_id(
     })
 }
 
+#[openapi]
 #[get("/equities/<ticker>/options", rank = 1)]
 async fn list_equity_options_by_underlying_ticker(
     _check: UserCheck,

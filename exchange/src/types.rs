@@ -13,6 +13,11 @@ use diesel::{
     sql_types::{Binary, Text},
 };
 use email_address::EmailAddress;
+use schemars::{
+    gen::SchemaGenerator,
+    schema::{InstanceType, SchemaObject},
+    JsonSchema,
+};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +43,20 @@ where
     }
 }
 
+impl JsonSchema for Password {
+    fn schema_name() -> String {
+        "password".to_string()
+    }
+
+    fn json_schema(_gen: &mut SchemaGenerator) -> schemars::schema::Schema {
+        schemars::schema::Schema::Object(SchemaObject {
+            instance_type: Some(InstanceType::String.into()),
+            format: Some("password".to_string()),
+            ..Default::default()
+        })
+    }
+}
+
 impl<B: Backend> ToSql<Text, B> for Password
 where
     str: ToSql<Text, B>,
@@ -51,6 +70,20 @@ where
 #[serde(transparent)]
 #[diesel(sql_type = Text)]
 pub struct Email(EmailAddress);
+
+impl JsonSchema for Email {
+    fn schema_name() -> String {
+        "email".to_string()
+    }
+
+    fn json_schema(_gen: &mut SchemaGenerator) -> schemars::schema::Schema {
+        schemars::schema::Schema::Object(SchemaObject {
+            instance_type: Some(InstanceType::String.into()),
+            format: Some("email".to_string()),
+            ..Default::default()
+        })
+    }
+}
 
 impl Display for Email {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -91,6 +124,7 @@ where
     Hash,
     Eq,
     PartialEq,
+    JsonSchema,
 )]
 #[serde(transparent)]
 #[diesel(sql_type = Binary)]
