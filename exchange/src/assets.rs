@@ -40,9 +40,13 @@ pub fn routes() -> Vec<Route> {
 #[diesel(table_name = crate::schema::equities)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Equity {
+    /// A unique identifier for equity assets.
     pub id: i32,
+    /// Date & time of creation in RFC 3339 format.
     pub created: NaiveDateTime,
+    /// A common identifier for equity assets, usually five letters or less.
     pub ticker: String,
+    /// Description of the company that this asset is derived from.
     pub description: Option<String>,
 }
 
@@ -50,11 +54,17 @@ pub struct Equity {
 #[diesel(table_name = crate::schema::equity_options)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct EquityOption {
+    /// ID of the equity asset underlying this option.
     pub underlying: i32,
+    /// Date that this contract expires.
     pub expiration_date: NaiveDate,
+    /// The kind of contract (call or put).
     pub contract_type: ContractType,
+    /// The strike price, measured in mills.
     pub strike_price: Mills,
+    /// The exercise style of this option. Determines when and how this option may be exercised.
     pub exercise_style: ExerciseStyle,
+    /// Date & time of creation in RFC 3339 format.
     pub created: NaiveDateTime,
 }
 
@@ -74,7 +84,9 @@ pub struct EquityOption {
 #[strum(serialize_all = "snake_case")]
 #[diesel(sql_type = Text)]
 pub enum ContractType {
+    /// Confers the right (but not the obligation) to buy the underlying asset at the strike price.
     Call,
+    /// Confers the right (but not the obligation) to sell the underlying asset at the strike price.
     Put,
 }
 
