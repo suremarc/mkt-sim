@@ -29,7 +29,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    auth::{AdminCheck, AuthnClaim, JwtSecretKey, RoleCheck, UserCheck},
+    auth::{AdminCheck, AuthnClaim, RoleCheck, UserCheck},
     schema::users::dsl,
     types::{Email, Password, Uuid},
     MetaConn,
@@ -185,7 +185,7 @@ impl<'r> OpenApiFromRequest<'r> for UserIdCheck {
         name: String,
         required: bool,
     ) -> rocket_okapi::Result<RequestHeaderInput> {
-        JwtSecretKey::from_request_input(gen, name, required)
+        AuthnClaim::from_request_input(gen, name, required)
     }
 }
 

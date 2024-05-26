@@ -82,7 +82,7 @@ async fn login(
     .map_err(|_e| Status::InternalServerError)
 }
 
-pub struct JwtSecretKey(SecretString);
+struct JwtSecretKey(SecretString);
 
 impl Deref for JwtSecretKey {
     type Target = SecretString;
@@ -110,20 +110,7 @@ impl<'r> OpenApiFromRequest<'r> for JwtSecretKey {
         _name: String,
         _required: bool,
     ) -> rocket_okapi::Result<RequestHeaderInput> {
-        let mut requirements = SecurityRequirement::new();
-        requirements.insert("token".to_string(), vec![]);
-        Ok(RequestHeaderInput::Security(
-            "token".to_string(),
-            SecurityScheme {
-                description: None,
-                data: SecuritySchemeData::Http {
-                    scheme: "Bearer".to_string(),
-                    bearer_format: None,
-                },
-                extensions: Default::default(),
-            },
-            requirements,
-        ))
+        Ok(RequestHeaderInput::None)
     }
 }
 
@@ -154,11 +141,35 @@ impl<'r> FromRequest<'r> for AuthnClaim {
             })
             .and_then(|claim| {
                 if claim.expires < chrono::offset::Utc::now() {
+                    println!("claim expired");
                     Outcome::Error((Status::Unauthorized, ()))
                 } else {
                     Outcome::Success(claim)
                 }
             })
+    }
+}
+
+impl<'r> OpenApiFromRequest<'r> for AuthnClaim {
+    fn from_request_input(
+        _gen: &mut OpenApiGenerator,
+        _name: String,
+        _required: bool,
+    ) -> rocket_okapi::Result<RequestHeaderInput> {
+        let mut requirements = SecurityRequirement::new();
+        requirements.insert("token".to_string(), vec![]);
+        Ok(RequestHeaderInput::Security(
+            "token".to_string(),
+            SecurityScheme {
+                description: None,
+                data: SecuritySchemeData::Http {
+                    scheme: "Bearer".to_string(),
+                    bearer_format: None,
+                },
+                extensions: Default::default(),
+            },
+            requirements,
+        ))
     }
 }
 
@@ -170,7 +181,7 @@ impl<'r, const FLAGS: i64> OpenApiFromRequest<'r> for RoleCheck<FLAGS> {
         name: String,
         required: bool,
     ) -> rocket_okapi::Result<RequestHeaderInput> {
-        JwtSecretKey::from_request_input(gen, name, required)
+        AuthnClaim::from_request_input(gen, name, required)
     }
 }
 
