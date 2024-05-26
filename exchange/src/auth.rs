@@ -19,6 +19,7 @@ use rocket_okapi::{
 use schemars::JsonSchema;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 use crate::{
     accounts::{Roles, User},
@@ -69,7 +70,7 @@ async fn login(
 
     let claim = AuthnClaim {
         id: user.id,
-        exp: chrono::offset::Utc::now().timestamp() as u64,
+        exp: (chrono::offset::Utc::now() + chrono::Days::new(7)).timestamp() as u64,
     };
 
     jwt::encode(
@@ -95,10 +96,12 @@ impl<'r> FromRequest<'r> for JwtSecretKey {
     type Error = ();
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        match req.rocket().figment().extract_inner("jwt.token") {
-            Err(_e) => Outcome::Error((Status::InternalServerError, ())),
-            Ok(r) => Outcome::Success(JwtSecretKey(r)),
-        }
+        req.rocket()
+            .figment()
+            .extract_inner("jwt.secret")
+            .map(JwtSecretKey)
+            .map_err(|e| error!("error reading jwt secret key: {e}"))
+            .or_error(Status::InternalServerError)
     }
 }
 
@@ -130,7 +133,7 @@ impl<'r> FromRequest<'r> for AuthnClaim {
                 jwt::decode::<AuthnClaim>(token, &decoding_key, &validation)
                     .map(|token| token.claims)
                     .map_err(|e| {
-                        println!("{e}");
+                        error!("error decoding jwt: {e}");
                     })
                     .or_error(Status::Unauthorized)
             } else {
@@ -196,7 +199,7 @@ impl<'r, const FLAGS: i64> FromRequest<'r> for RoleCheck<FLAGS> {
                 users.find(claim.id).select(role_flags).get_result(c)
             })
             .await
-            .map_err(|_e| {})
+            .map_err(|e| { error!("error fetching user roles for '{}': {e}", claim.id) })
             .or_error(Status::InternalServerError));
 
         if !roles.contains(required_roles) {

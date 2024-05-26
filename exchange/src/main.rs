@@ -8,6 +8,8 @@ use rocket_okapi::{
 
 #[launch]
 fn rocket() -> _ {
+    tracing_subscriber::fmt::init();
+
     rocket::build()
         .attach(MetaConn::fairing())
         .attach(Accounting::init())
