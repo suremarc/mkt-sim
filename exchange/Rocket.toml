@@ -1,6 +1,6 @@
 [debug.admin]
-email = "admin@mkt-sim.com"
-password = "password"
+email = "user@example.com"
+password = "string"
 
 [debug.databases]
 meta = { url = "data.db" }
