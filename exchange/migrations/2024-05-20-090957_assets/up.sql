@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS equities (
     id INTEGER NOT NULL PRIMARY KEY,
     created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ticker TEXT NOT NULL,
+    ticker TEXT NOT NULL UNIQUE,
     description TEXT
 );
 
