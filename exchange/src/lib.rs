@@ -80,8 +80,13 @@ impl Pool for AccountingPool {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct List<T> {
     #[serde(default, skip_serializing_if = "is_zero")]
+    #[schemars(example = "example_count")]
     pub count: usize,
     pub items: Vec<T>,
+}
+
+fn example_count() -> usize {
+    1
 }
 
 fn is_zero(num: &usize) -> bool {
