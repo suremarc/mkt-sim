@@ -5,6 +5,7 @@ password = "string"
 [debug.databases]
 meta = { url = "data.db" }
 accounting = { url = "127.0.0.1:3000" }
+orders = { url = "redis://valkey:6379" }
 
 [debug.jwt]
 secret = "b76aed65657602cbc44f26284ef076d9f0a548ef547282ff0500338a60a5bfac"

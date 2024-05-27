@@ -3,6 +3,7 @@
 diesel::table! {
     equities (id) {
         id -> Integer,
+        asset_id -> Text,
         created -> Timestamp,
         ticker -> Text,
         description -> Nullable<Text>,

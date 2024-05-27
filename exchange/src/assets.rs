@@ -42,6 +42,8 @@ pub fn routes() -> Vec<Route> {
 pub struct Equity {
     /// A unique identifier for equity assets.
     pub id: i32,
+    /// A unique global identifier across all asset classes
+    pub asset_id: String,
     /// Date & time of creation in RFC 3339 format.
     pub created: NaiveDateTime,
     /// A common identifier for equity assets, usually five letters or less.

@@ -21,6 +21,15 @@ services:
           ./tigerbeetle format --cluster=0 --replica=0 --replica-count=1 /data/0_0.tigerbeetle
         fi
 
+  valkey:
+    image: docker.io/bitnami/valkey:7.2
+    restart: always
+    ports:
+      - '6379:6379'
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    volumes: [ valkey:/bitnami/valkey/data ]
+
   exchange:
     image: suremarc/mkt-sim-exchange
     ports: [ 127.0.0.1:8000:8000 ]
@@ -36,4 +45,6 @@ services:
 
 volumes:
   tigerbeetle:
+    driver: local
+  valkey:
     driver: local

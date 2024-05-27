@@ -1,5 +1,3 @@
-#![allow(clippy::enum_clike_unportable_variant)]
-
 use std::{ops::Deref, sync::Arc};
 
 use figment::Figment;
@@ -18,6 +16,7 @@ pub mod assets;
 pub mod auth;
 #[rustfmt::skip]
 pub mod schema;
+pub mod orders;
 pub mod types;
 
 #[database("meta")]
@@ -32,6 +31,10 @@ impl<'r> OpenApiFromRequest<'r> for MetaConn {
         Ok(RequestHeaderInput::None)
     }
 }
+
+#[derive(Database)]
+#[database("orders")]
+pub struct Orders(pub rocket_db_pools::deadpool_redis::Pool);
 
 #[derive(Database)]
 #[database("accounting")]

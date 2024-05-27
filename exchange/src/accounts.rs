@@ -27,6 +27,7 @@ use schemars::{
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 use crate::{
     auth::{AdminCheck, AuthnClaim, RoleCheck, UserCheck},
@@ -242,7 +243,10 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
         .await;
 
     match res {
-        Err(_e) => Err(rocket),
+        Err(e) => {
+            error!("error setting up admin account: {e}");
+            Err(rocket)
+        }
         Ok(_) => Ok(rocket),
     }
 }

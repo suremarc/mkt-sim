@@ -9,14 +9,16 @@ bcrypt = "0.15.1"
 bitflags = { version = "2.5.0", features = ["serde"] }
 chrono = { version = "0.4.38", features = ["serde"] }
 diesel = { version = "2.1.6", features = ["chrono", "time", "serde_json", "uuid", "sqlite", "returning_clauses_for_sqlite_3_35"] }
+diesel_migrations = { version = "2.1.0", features = ["sqlite"] }
 email_address = "0.2.4"
 figment = { version = "0.10.19", features = ["toml"] }
 fixed = { version = "1.27.0", features = ["serde-str"] }
 itertools = "0.13.0"
 jsonwebtoken = "9.3.0"
+redis = "0.25.3"
 rocket = { version = "0.5.0", features = ["json", "uuid"] }
-rocket_db_pools = { version = "0.1.0" }
-rocket_okapi = { version = "0.8.0", features = ["swagger"] }
+rocket_db_pools = { version = "0.1.0", features = ["deadpool_redis"] }
+rocket_okapi = { version = "0.8.0", features = ["swagger", "rocket_db_pools"] }
 rocket_sync_db_pools = { version = "0.1.0", features = ["diesel_sqlite_pool"] }
 schemars = { version = "0.8.21", features = ["chrono", "uuid", "uuid1"] }
 secrecy = { version = "0.8.0", features = ["serde"] }
