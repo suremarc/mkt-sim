@@ -61,13 +61,21 @@ async fn login(
         .await
         .map_err(|e| match e {
             diesel::result::Error::NotFound => Status::NotFound,
-            _ => Status::InternalServerError,
+            e => {
+                error!("error fetching user from db: {e}");
+                Status::InternalServerError
+            }
         })?;
 
     // check password
-    if !bcrypt::verify(form.password.expose_secret(), user.password.expose_secret())
-        .map_err(|_e| Status::InternalServerError)?
-    {
+    let password_check =
+        bcrypt::verify(form.password.expose_secret(), user.password.expose_secret()).map_err(
+            |e| {
+                error!("error verifying password: {e}");
+                Status::InternalServerError
+            },
+        )?;
+    if !password_check {
         return Err(Status::NotFound);
     }
 
@@ -81,7 +89,10 @@ async fn login(
         &claim,
         &jwt::EncodingKey::from_secret(jwt_secret.expose_secret().as_bytes()),
     )
-    .map_err(|_e| Status::InternalServerError)
+    .map_err(|e| {
+        error!("error encoding jwt: {e}");
+        Status::InternalServerError
+    })
 }
 
 struct JwtSecretKey(SecretString);

@@ -6,6 +6,7 @@ use diesel::{
     deserialize::{FromSql, FromSqlRow},
     expression::AsExpression,
     prelude::Insertable,
+    result::DatabaseErrorKind,
     serialize::{Output, ToSql},
     sql_function,
     sql_types::{Integer, Text},
@@ -16,6 +17,7 @@ use rocket_okapi::{openapi, openapi_get_routes};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum_macros::{EnumString, IntoStaticStr};
+use tracing::error;
 
 use crate::{
     auth::{AdminCheck, UserCheck},
@@ -185,7 +187,10 @@ async fn list_equities(_check: UserCheck, conn: MetaConn) -> Result<Json<List<Eq
         .await
         .map(List::from)
         .map(Json)
-        .map_err(|_e| Status::InternalServerError)
+        .map_err(|e| {
+            error!("error listing equities: {e}");
+            Status::InternalServerError
+        })
 }
 
 /// # Get Equity
@@ -203,7 +208,10 @@ async fn get_equity_by_id(
         .map(Json)
         .map_err(|e| match e {
             diesel::result::Error::NotFound => Status::NotFound,
-            _ => Status::InternalServerError,
+            e => {
+                error!("error fetching equity from db: {e}");
+                Status::InternalServerError
+            }
         })
 }
 
@@ -223,7 +231,10 @@ async fn get_equity_by_ticker(
         .map(Json)
         .map_err(|e| match e {
             diesel::result::Error::NotFound => Status::NotFound,
-            _ => Status::InternalServerError,
+            e => {
+                error!("error fetching equity from db: {e}");
+                Status::InternalServerError
+            }
         })
 }
 
@@ -266,8 +277,13 @@ async fn create_equities(
     .map(List::from)
     .map(Json)
     .map_err(|e| match e {
-        diesel::result::Error::DatabaseError(_, _) => Status::Conflict,
-        _ => Status::InternalServerError,
+        diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
+            Status::Conflict
+        }
+        e => {
+            error!("error creating equities: {e}");
+            Status::InternalServerError
+        }
     })
 }
 
@@ -290,8 +306,13 @@ async fn create_equity_options(
     })
     .await
     .map_err(|e| match e {
-        diesel::result::Error::DatabaseError(_, _) => Status::Conflict,
-        _ => Status::InternalServerError,
+        diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
+            Status::Conflict
+        }
+        e => {
+            error!("error creating equity options: {e}");
+            Status::InternalServerError
+        }
     })?;
 
     Ok(())
@@ -326,7 +347,10 @@ async fn list_equity_options_by_underlying_id(
     .map(Json)
     .map_err(|e| match e {
         diesel::result::Error::NotFound => Status::NotFound,
-        _ => Status::InternalServerError,
+        e => {
+            error!("error listing equity options: {e}");
+            Status::InternalServerError
+        }
     })
 }
 
@@ -364,6 +388,9 @@ async fn list_equity_options_by_underlying_ticker(
     .map(Json)
     .map_err(|e| match e {
         diesel::result::Error::NotFound => Status::NotFound,
-        _ => Status::InternalServerError,
+        e => {
+            error!("error listing equity options: {e}");
+            Status::InternalServerError
+        }
     })
 }

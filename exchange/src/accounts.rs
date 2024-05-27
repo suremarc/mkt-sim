@@ -2,6 +2,7 @@ use bitflags::bitflags;
 use diesel::{
     backend::Backend,
     deserialize::{self, FromSql},
+    result::DatabaseErrorKind,
     serialize::{self, Output, ToSql},
     sql_types::BigInt,
     upsert::excluded,
@@ -120,7 +121,10 @@ async fn get_account_by_id(
         .map(Json)
         .map_err(|e| match e {
             diesel::result::Error::NotFound => Status::NotFound,
-            _ => Status::InternalServerError,
+            e => {
+                error!("error fetching user from db: {e}");
+                Status::InternalServerError
+            }
         })
 }
 
@@ -132,7 +136,10 @@ async fn list_accounts(_check: AdminCheck, conn: MetaConn) -> Result<Json<List<U
         .await
         .map(List::from)
         .map(Json)
-        .map_err(|_e| Status::InternalServerError)
+        .map_err(|e| {
+            error!("error listing accounts: {e}");
+            Status::InternalServerError
+        })
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -153,7 +160,10 @@ async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<Use
     let hash = bcrypt::hash(form.password.expose_secret(), bcrypt::DEFAULT_COST)
         .map(SecretString::new)
         .map(Password)
-        .map_err(|_e| Status::InternalServerError)?;
+        .map_err(|e| {
+            error!("error hashing password: {e}");
+            Status::InternalServerError
+        })?;
 
     conn.run(move |c| {
         diesel::insert_into(dsl::users)
@@ -168,8 +178,13 @@ async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<Use
     .await
     .map(Json)
     .map_err(|e| match e {
-        diesel::result::Error::DatabaseError(_, _) => Status::Conflict,
-        _ => Status::InternalServerError,
+        diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
+            Status::Conflict
+        }
+        e => {
+            error!("error inserting user into DB: {e}");
+            Status::InternalServerError
+        }
     })
 }
 
@@ -205,7 +220,10 @@ impl<'r> OpenApiFromRequest<'r> for UserIdCheck {
 
 pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
     let form: NewAccountForm = match rocket.figment().focus("admin").extract() {
-        Err(_e) => return Err(rocket),
+        Err(e) => {
+            error!("error reading admin config: {e}");
+            return Err(rocket);
+        }
         Ok(form) => form,
     };
 
@@ -214,7 +232,10 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
         .map(SecretString::new)
         .map(Password)
     {
-        Err(_e) => return Err(rocket),
+        Err(e) => {
+            error!("error hashing admin password: {e}");
+            return Err(rocket);
+        }
         Ok(hash) => hash,
     };
 
