@@ -3,20 +3,21 @@
 diesel::table! {
     equities (id) {
         id -> Integer,
-        asset_id -> Text,
-        created -> Timestamp,
+        asset_id -> Integer,
         ticker -> Text,
         description -> Nullable<Text>,
+        created -> Timestamp,
     }
 }
 
 diesel::table! {
-    equity_options (underlying, expiration_date, contract_type, strike_price, exercise_style) {
+    equity_options (id) {
+        id -> Integer,
+        asset_id -> Integer,
         underlying -> Integer,
         expiration_date -> Date,
         contract_type -> Text,
         strike_price -> Integer,
-        exercise_style -> Text,
         created -> Timestamp,
     }
 }

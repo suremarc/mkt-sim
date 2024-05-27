@@ -1,11 +1,11 @@
-use rocket::{get, http::Status};
-use rocket_db_pools::Connection;
-use rocket_okapi::openapi;
+// use rocket::{get, http::Status};
+// use rocket_db_pools::Connection;
+// use rocket_okapi::openapi;
 
-use crate::Orders;
+// use crate::Orders;
 
-#[openapi]
-#[get("/equities/<id>/orders")]
-async fn get_equity_orders(orders: Connection<Orders>, id: uuid::Uuid) -> Result<(), Status> {
-    todo!()
-}
+// #[openapi]
+// #[get("/<id>/orders")]
+// async fn get_equity_orders(orders: Connection<Orders>, id: uuid::Uuid) -> Result<(), Status> {
+//     todo!()
+// }

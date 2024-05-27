@@ -44,20 +44,24 @@ pub fn routes() -> Vec<Route> {
 pub struct Equity {
     /// A unique identifier for equity assets.
     pub id: i32,
-    /// A unique global identifier across all asset classes
-    pub asset_id: String,
-    /// Date & time of creation in RFC 3339 format.
-    pub created: NaiveDateTime,
+    /// A unique global identifier for this asset.
+    pub asset_id: i32,
     /// A common identifier for equity assets, usually five letters or less.
     pub ticker: String,
     /// Description of the company that this asset is derived from.
     pub description: Option<String>,
+    /// Date & time of creation in RFC 3339 format.
+    pub created: NaiveDateTime,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, JsonSchema)]
 #[diesel(table_name = crate::schema::equity_options)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct EquityOption {
+    /// A unique identifier for equity options.
+    pub id: i32,
+    /// A unique global identifier for this asset.
+    pub asset_id: i32,
     /// ID of the equity asset underlying this option.
     pub underlying: i32,
     /// Date that this contract expires.
@@ -66,115 +70,8 @@ pub struct EquityOption {
     pub contract_type: ContractType,
     /// The strike price, measured in mills.
     pub strike_price: Mills,
-    /// The exercise style of this option. Determines when and how this option may be exercised.
-    pub exercise_style: ExerciseStyle,
     /// Date & time of creation in RFC 3339 format.
     pub created: NaiveDateTime,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Deserialize,
-    Serialize,
-    FromSqlRow,
-    AsExpression,
-    EnumString,
-    IntoStaticStr,
-    JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-#[diesel(sql_type = Text)]
-pub enum ContractType {
-    /// Confers the right (but not the obligation) to buy the underlying asset at the strike price.
-    Call,
-    /// Confers the right (but not the obligation) to sell the underlying asset at the strike price.
-    Put,
-}
-
-impl<B: Backend> FromSql<Text, B> for ContractType
-where
-    String: FromSql<Text, B>,
-{
-    fn from_sql(bytes: <B as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
-        String::from_sql(bytes).and_then(|v| {
-            Self::from_str(&v).map_err(|e| format!("invalid contract type: {e}").into())
-        })
-    }
-}
-
-impl<B: Backend> ToSql<Text, B> for ContractType
-where
-    str: ToSql<Text, B>,
-{
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, B>) -> diesel::serialize::Result {
-        str::to_sql(self.into(), out)
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, FromSqlRow, AsExpression, JsonSchema)]
-#[serde(transparent)]
-#[diesel(sql_type = Integer)]
-pub struct Mills(pub i32);
-
-impl<B: Backend> FromSql<Integer, B> for Mills
-where
-    i32: FromSql<Integer, B>,
-{
-    fn from_sql(bytes: <B as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
-        i32::from_sql(bytes).map(Self)
-    }
-}
-
-impl<B: Backend> ToSql<Integer, B> for Mills
-where
-    i32: ToSql<Integer, B>,
-{
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, B>) -> diesel::serialize::Result {
-        i32::to_sql(&self.0, out)
-    }
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Deserialize,
-    Serialize,
-    FromSqlRow,
-    AsExpression,
-    EnumString,
-    IntoStaticStr,
-    JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-#[diesel(sql_type = Text)]
-pub enum ExerciseStyle {
-    American,
-    European,
-}
-
-impl<B: Backend> FromSql<Text, B> for ExerciseStyle
-where
-    String: FromSql<Text, B>,
-{
-    fn from_sql(bytes: <B as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
-        String::from_sql(bytes).and_then(|v| {
-            Self::from_str(&v).map_err(|e| format!("invalid contract type: {e}").into())
-        })
-    }
-}
-
-impl<B: Backend> ToSql<Text, B> for ExerciseStyle
-where
-    str: ToSql<Text, B>,
-{
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, B>) -> diesel::serialize::Result {
-        str::to_sql(self.into(), out)
-    }
 }
 
 /// # Get Equities
@@ -287,6 +184,20 @@ async fn create_equities(
     })
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Insertable, JsonSchema)]
+#[diesel(table_name = crate::schema::equity_options)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+struct CreateEquityOptionItem {
+    /// ID of the equity asset underlying this option.
+    pub underlying: i32,
+    /// Date that this contract expires.
+    pub expiration_date: NaiveDate,
+    /// The kind of contract (call or put).
+    pub contract_type: ContractType,
+    /// The strike price, measured in mills.
+    pub strike_price: Mills,
+}
+
 /// # Create Equity Options
 ///
 /// Batch endpoint for creating equity options.
@@ -296,7 +207,7 @@ async fn create_equities(
 async fn create_equity_options(
     _check: AdminCheck,
     conn: MetaConn,
-    form: Json<List<EquityOption>>,
+    form: Json<List<CreateEquityOptionItem>>,
 ) -> Result<(), Status> {
     conn.run(move |c| {
         use crate::schema::equity_options::dsl::*;
@@ -328,16 +239,18 @@ async fn list_equity_options_by_underlying_id(
     conn: MetaConn,
     id: i32,
 ) -> Result<Json<List<EquityOption>>, Status> {
+    let underlying_id = id;
     conn.run(move |c| {
         use crate::schema::equity_options::dsl::*;
         equity_options
-            .filter(underlying.eq(id))
+            .filter(underlying.eq(underlying_id))
             .select((
+                id,
+                asset_id,
                 underlying,
                 expiration_date,
                 contract_type,
                 strike_price,
-                exercise_style,
                 created,
             ))
             .load(c)
@@ -374,11 +287,12 @@ async fn list_equity_options_by_underlying_ticker(
             .inner_join(equities)
             .filter(equities_dsl::ticker.eq(ticker))
             .select((
+                id,
+                asset_id,
                 underlying,
                 expiration_date,
                 contract_type,
                 strike_price,
-                exercise_style,
                 created,
             ))
             .load(c)
@@ -393,4 +307,69 @@ async fn list_equity_options_by_underlying_ticker(
             Status::InternalServerError
         }
     })
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Deserialize,
+    Serialize,
+    FromSqlRow,
+    AsExpression,
+    EnumString,
+    IntoStaticStr,
+    JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+#[diesel(sql_type = Text)]
+pub enum ContractType {
+    /// Confers the right (but not the obligation) to buy the underlying asset at the strike price.
+    Call,
+    /// Confers the right (but not the obligation) to sell the underlying asset at the strike price.
+    Put,
+}
+
+impl<B: Backend> FromSql<Text, B> for ContractType
+where
+    String: FromSql<Text, B>,
+{
+    fn from_sql(bytes: <B as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
+        String::from_sql(bytes).and_then(|v| {
+            Self::from_str(&v).map_err(|e| format!("invalid contract type: {e}").into())
+        })
+    }
+}
+
+impl<B: Backend> ToSql<Text, B> for ContractType
+where
+    str: ToSql<Text, B>,
+{
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, B>) -> diesel::serialize::Result {
+        str::to_sql(self.into(), out)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, FromSqlRow, AsExpression, JsonSchema)]
+#[serde(transparent)]
+#[diesel(sql_type = Integer)]
+pub struct Mills(pub i32);
+
+impl<B: Backend> FromSql<Integer, B> for Mills
+where
+    i32: FromSql<Integer, B>,
+{
+    fn from_sql(bytes: <B as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
+        i32::from_sql(bytes).map(Self)
+    }
+}
+
+impl<B: Backend> ToSql<Integer, B> for Mills
+where
+    i32: ToSql<Integer, B>,
+{
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, B>) -> diesel::serialize::Result {
+        i32::to_sql(&self.0, out)
+    }
 }
