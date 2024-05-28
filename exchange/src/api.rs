@@ -3,7 +3,10 @@ use rocket::{
     fairing::{self, AdHoc},
     Build, Rocket,
 };
-use rocket_db_pools::Database;
+use rocket_db_pools::{
+    deadpool_redis::redis::{self, FromRedisValue},
+    Database,
+};
 use rocket_okapi::{
     settings::UrlObject,
     swagger_ui::{make_swagger_ui, SwaggerUIConfig},
@@ -66,6 +69,12 @@ impl<T> From<Vec<T>> for List<T> {
             count: value.len(),
             items: value,
         }
+    }
+}
+
+impl<T: FromRedisValue> FromRedisValue for List<T> {
+    fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
+        Vec::<T>::from_redis_value(v).map(Self::from)
     }
 }
 

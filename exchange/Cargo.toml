@@ -16,7 +16,8 @@ figment = { version = "0.10.19", features = ["toml"] }
 fixed = { version = "1.27.0", features = ["serde-str"] }
 itertools = "0.13.0"
 jsonwebtoken = "9.3.0"
-redis = "0.25.3"
+redis = "=0.23.3"
+redis-derive = "0.1.7"
 rocket = { version = "0.5.0", features = ["json", "uuid"] }
 rocket_db_pools = { version = "0.1.0", features = ["deadpool_redis"] }
 rocket_okapi = { version = "0.8.0", features = ["swagger", "rocket_db_pools"] }
@@ -37,4 +38,4 @@ tokio = { version = "1.37.0", features = [
 ] }
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-uuid = { version = "1.8.0", features = ["serde", "v4", "v5"] }
+uuid = { version = "1.8.0", features = ["serde", "v4", "v5", "v7"] }

@@ -13,6 +13,8 @@ use diesel::{
     sql_types::{Binary, Text},
 };
 use email_address::EmailAddress;
+use rocket::request::FromParam;
+use rocket_db_pools::deadpool_redis::redis::{self, FromRedisValue, ToRedisArgs};
 use schemars::{
     gen::SchemaGenerator,
     schema::{InstanceType, SchemaObject},
@@ -172,5 +174,28 @@ where
 {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, B>) -> serialize::Result {
         self.0.as_bytes().to_sql(out)
+    }
+}
+
+impl<'a> FromParam<'a> for Uuid {
+    type Error = <uuid::Uuid as FromParam<'a>>::Error;
+
+    fn from_param(param: &'a str) -> Result<Self, Self::Error> {
+        uuid::Uuid::from_param(param).map(Self)
+    }
+}
+
+impl FromRedisValue for Uuid {
+    fn from_redis_value(_v: &redis::Value) -> redis::RedisResult<Self> {
+        todo!()
+    }
+}
+
+impl ToRedisArgs for Uuid {
+    fn write_redis_args<W>(&self, out: &mut W)
+    where
+        W: ?Sized + redis::RedisWrite,
+    {
+        out.write_arg(self.0.as_bytes())
     }
 }

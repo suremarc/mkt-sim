@@ -6,6 +6,6 @@
 
 // #[openapi]
 // #[get("/<id>/orders")]
-// async fn get_equity_orders(orders: Connection<Orders>, id: uuid::Uuid) -> Result<(), Status> {
+// async fn get_equity_orders(orders: Connection<Orders>, id: Uuid) -> Result<(), Status> {
 //     todo!()
 // }

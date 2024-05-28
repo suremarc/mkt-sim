@@ -9,6 +9,7 @@ use diesel::{
     ExpressionMethods, QueryDsl, RunQueryDsl,
 };
 use itertools::Itertools;
+use redis_derive::{FromRedisValue, ToRedisArgs};
 use rocket::{
     fairing, get,
     http::Status,
@@ -17,7 +18,10 @@ use rocket::{
     serde::json::Json,
     Build, Request, Rocket, Route,
 };
-use rocket_db_pools::Connection;
+use rocket_db_pools::{
+    deadpool_redis::redis::{self},
+    Connection,
+};
 use rocket_okapi::{
     gen::OpenApiGenerator,
     openapi, openapi_get_routes,
@@ -39,7 +43,7 @@ use super::{
     types::{Email, Password, Uuid},
 };
 
-use crate::{Accounting, MetaConn};
+use crate::{Accounting, MetaConn, Orders};
 
 use diesel::{
     deserialize::FromSqlRow, expression::AsExpression, prelude::Insertable, Queryable, Selectable,
@@ -52,7 +56,9 @@ pub fn routes() -> Vec<Route> {
         register,
         get_account_by_id,
         list_accounts,
-        get_equities_for_account
+        get_equities_for_account,
+        submit_orders_for_account,
+        list_orders_for_account,
     ]
 }
 
@@ -122,9 +128,9 @@ where
 async fn get_account_by_id(
     _check: UserIdCheck,
     conn: MetaConn,
-    id: uuid::Uuid,
+    id: Uuid,
 ) -> Result<Json<User>, Status> {
-    conn.run(move |c| dsl::users.find(Uuid(id)).first(c))
+    conn.run(move |c| dsl::users.find(id).first(c))
         .await
         .map(Json)
         .map_err(|e| match e {
@@ -207,7 +213,7 @@ struct Holdings {
 #[get("/<id>/equities")]
 async fn get_equities_for_account(
     _check: UserIdCheck,
-    id: uuid::Uuid,
+    id: Uuid,
     meta: MetaConn,
     accounting: Connection<Accounting>,
 ) -> Result<Json<List<Holdings>>, Status> {
@@ -224,7 +230,7 @@ async fn get_equities_for_account(
 
     let tb_ids = asset_ids
         .into_iter()
-        .map(|asset_id| uuid::Uuid::new_v5(&id, &i32::to_be_bytes(asset_id)).as_u128())
+        .map(|asset_id| uuid::Uuid::new_v5(&id.0, &i32::to_be_bytes(asset_id)).as_u128())
         .collect_vec();
 
     let assets: Vec<tb::Account> = accounting.lookup_accounts(tb_ids).await.map_err(|e| {
@@ -241,6 +247,125 @@ async fn get_equities_for_account(
             })
             .collect_vec(),
     )))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToRedisArgs, FromRedisValue)]
+pub struct Order {
+    pub account_id: Uuid,
+    pub price: i32,
+    pub qty: u32,
+    pub side: Side,
+    pub r#type: OrderType,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, ToRedisArgs, FromRedisValue)]
+pub enum OrderType {
+    Market,
+    Limit,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, ToRedisArgs, FromRedisValue)]
+pub enum Side {
+    Buy,
+    Sell,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CreateOrderForm {
+    pub price: i32,
+    pub qty: u32,
+    pub side: Side,
+    pub r#type: OrderType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToRedisArgs)]
+struct OrderBookKey {
+    side: Side,
+    asset_id: i32,
+}
+
+/// Submit an order for an equity asset.
+#[openapi]
+#[post("/<id>/assets/<asset_id>/orders", data = "<form>")]
+async fn submit_orders_for_account(
+    _check: UserIdCheck,
+    id: Uuid,
+    asset_id: i32,
+    mut orders: Connection<Orders>,
+    form: Json<CreateOrderForm>,
+) -> Result<(), Status> {
+    let order_id = Uuid(uuid::Uuid::now_v7());
+
+    redis::Pipeline::new()
+        .atomic()
+        .zadd(
+            OrderBookKey {
+                side: form.side,
+                asset_id,
+            },
+            order_id,
+            form.price,
+        )
+        .ignore()
+        .sadd(id, order_id)
+        .ignore()
+        .cmd("HSET")
+        .arg(order_id)
+        .arg(Order {
+            account_id: id,
+            price: form.price,
+            qty: form.qty,
+            side: form.side,
+            r#type: form.r#type,
+        })
+        .ignore()
+        .query_async(orders.as_mut())
+        .await
+        .map_err(|e| {
+            error!("error submitting order: {e}");
+            Status::InternalServerError
+        })?;
+
+    Ok(())
+}
+
+#[openapi]
+#[get("/<id>/assets/orders")]
+async fn list_orders_for_account(
+    _check: UserIdCheck,
+    id: Uuid,
+    mut orders: Connection<Orders>,
+) -> Result<Json<List<Order>>, Status> {
+    let script = redis::Script::new(
+        r"
+        local keys = redis.call('SMEMBERS', KEYS[1])
+        redis.log(redis.LOG_WARNING, keys)
+        local results = {}
+        for i, key in ipairs(keys) do
+            redis.log(redis.LOG_WARNING, key)
+            local hash = redis.call('HGETALL', key)
+            -- Convert hash from flat list to a more structured table
+            local structured_hash = {}
+            for j = 1, #hash, 2 do
+                structured_hash[hash[j]] = hash[j + 1]
+            end
+            table.insert(results, {key, structured_hash})
+        end
+        redis.log(redis.LOG_WARNING, 'success')
+        return results
+    ",
+    );
+
+    script
+        .prepare_invoke()
+        .key(id)
+        .invoke_async(orders.as_mut())
+        .await
+        .map(Json)
+        .map_err(|e| {
+            error!("error listing orders: {e}");
+            Status::InternalServerError
+        })
 }
 
 #[allow(unused)]
