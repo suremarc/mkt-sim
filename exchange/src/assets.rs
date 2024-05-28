@@ -6,7 +6,7 @@ use diesel::{
     deserialize::{FromSql, FromSqlRow},
     expression::AsExpression,
     prelude::Insertable,
-    result::DatabaseErrorKind,
+    result::{DatabaseErrorKind, Error::DatabaseError},
     serialize::{Output, ToSql},
     sql_function,
     sql_types::{Integer, Text},
@@ -174,9 +174,7 @@ async fn create_equities(
     .map(List::from)
     .map(Json)
     .map_err(|e| match e {
-        diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
-            Status::Conflict
-        }
+        DatabaseError(DatabaseErrorKind::UniqueViolation, _) => Status::Conflict,
         e => {
             error!("error creating equities: {e}");
             Status::InternalServerError
@@ -208,25 +206,32 @@ async fn create_equity_options(
     _check: AdminCheck,
     conn: MetaConn,
     form: Json<List<CreateEquityOptionItem>>,
-) -> Result<(), Status> {
+) -> Result<Json<List<EquityOption>>, Status> {
     conn.run(move |c| {
-        use crate::schema::equity_options::dsl::*;
-        diesel::insert_into(equity_options)
-            .values(&form.items)
-            .execute(c)
+        c.transaction(|c| {
+            let n = form.items.len();
+            use crate::schema::equity_options::dsl::*;
+            diesel::insert_into(equity_options)
+                .values(&form.items)
+                .execute(c)?;
+            equity_options
+                .order(id.desc())
+                .limit(n as i64)
+                .order(id.asc())
+                .get_results(c)
+        })
     })
     .await
+    .map(List::from)
+    .map(Json)
     .map_err(|e| match e {
-        diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
-            Status::Conflict
-        }
+        DatabaseError(DatabaseErrorKind::UniqueViolation, _) => Status::Conflict,
+        DatabaseError(DatabaseErrorKind::ForeignKeyViolation, _) => Status::UnprocessableEntity,
         e => {
             error!("error creating equity options: {e}");
             Status::InternalServerError
         }
-    })?;
-
-    Ok(())
+    })
 }
 
 /// # List Equity Options by Underlying
