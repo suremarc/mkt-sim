@@ -1,6 +1,6 @@
 services:
   tigerbeetle:
-    image: ghcr.io/tigerbeetle/tigerbeetle
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.13.133
     network_mode: service:exchange
     volumes: [ tigerbeetle:/data ]
     command: start --addresses=127.0.0.1:3000 /data/0_0.tigerbeetle
@@ -11,7 +11,7 @@ services:
         condition: service_started
 
   tigerbeetle-format:
-    image: ghcr.io/tigerbeetle/tigerbeetle
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.13.133
     volumes: [ tigerbeetle:/data ]
     entrypoint: /bin/sh
     command:

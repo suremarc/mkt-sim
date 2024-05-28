@@ -8,6 +8,7 @@ use diesel::{
     upsert::excluded,
     ExpressionMethods, QueryDsl, RunQueryDsl,
 };
+use itertools::Itertools;
 use rocket::{
     fairing, get,
     http::Status,
@@ -16,6 +17,7 @@ use rocket::{
     serde::json::Json,
     Build, Request, Rocket, Route,
 };
+use rocket_db_pools::Connection;
 use rocket_okapi::{
     gen::OpenApiGenerator,
     openapi, openapi_get_routes,
@@ -28,14 +30,16 @@ use schemars::{
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
+use tigerbeetle_unofficial as tb;
 use tracing::error;
 
-use crate::{
+use super::{
     auth::{AdminCheck, AuthnClaim, RoleCheck, UserCheck},
     schema::users::dsl,
     types::{Email, Password, Uuid},
-    MetaConn,
 };
+
+use crate::{Accounting, MetaConn};
 
 use diesel::{
     deserialize::FromSqlRow, expression::AsExpression, prelude::Insertable, Queryable, Selectable,
@@ -44,11 +48,16 @@ use diesel::{
 use super::List;
 
 pub fn routes() -> Vec<Route> {
-    openapi_get_routes![register, get_account_by_id, list_accounts]
+    openapi_get_routes![
+        register,
+        get_account_by_id,
+        list_accounts,
+        get_equities_for_account
+    ]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable, JsonSchema)]
-#[diesel(table_name = crate::schema::users)]
+#[diesel(table_name = super::schema::users)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct User {
     /// A unique user identifier.
@@ -67,7 +76,6 @@ bitflags! {
     #[diesel(sql_type = BigInt)]
     pub struct Roles: i64 {
         const ADMIN = 1 << 0;
-        const USER = 1 << 1;
     }
 }
 
@@ -171,7 +179,7 @@ async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<Use
                 id,
                 email: form.email,
                 password: hash,
-                role_flags: Roles::USER,
+                role_flags: Roles::empty(),
             })
             .get_result(c)
     })
@@ -188,6 +196,53 @@ async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<Use
     })
 }
 
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+struct Holdings {
+    asset_id: i32,
+    amount: i128,
+}
+
+/// List equity holdings for an account.
+#[openapi]
+#[get("/<id>/equities")]
+async fn get_equities_for_account(
+    _check: UserIdCheck,
+    id: uuid::Uuid,
+    meta: MetaConn,
+    accounting: Connection<Accounting>,
+) -> Result<Json<List<Holdings>>, Status> {
+    let asset_ids: Vec<i32> = meta
+        .run(|c| {
+            use super::schema::equities::dsl::*;
+            equities.select(asset_id).load(c)
+        })
+        .await
+        .map_err(|e| {
+            error!("error fetching equities: {e}");
+            Status::InternalServerError
+        })?;
+
+    let tb_ids = asset_ids
+        .into_iter()
+        .map(|asset_id| uuid::Uuid::new_v5(&id, &i32::to_be_bytes(asset_id)).as_u128())
+        .collect_vec();
+
+    let assets: Vec<tb::Account> = accounting.lookup_accounts(tb_ids).await.map_err(|e| {
+        error!("error fetching assets from tigerbeetle: {e}");
+        Status::InternalServerError
+    })?;
+
+    Ok(Json(List::from(
+        assets
+            .into_iter()
+            .map(|asset| Holdings {
+                asset_id: asset.ledger() as i32,
+                amount: asset.credits_posted() as i128 - asset.debits_posted() as i128,
+            })
+            .collect_vec(),
+    )))
+}
+
 #[allow(unused)]
 struct UserIdCheck(pub AuthnClaim);
 
@@ -196,12 +251,12 @@ impl<'r> FromRequest<'r> for UserIdCheck {
     type Error = ();
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        if let Outcome::Success(RoleCheck(claim)) = req.guard::<AdminCheck>().await {
-            return Outcome::Success(Self(claim));
-        } else if let Outcome::Success(RoleCheck(claim)) = req.guard::<UserCheck>().await {
+        if let Outcome::Success(RoleCheck(claim)) = req.guard::<UserCheck>().await {
             if claim.id.0 == req.param::<uuid::Uuid>(0).unwrap().unwrap() {
                 return Outcome::Success(Self(claim));
             }
+        } else if let Outcome::Success(RoleCheck(claim)) = req.guard::<AdminCheck>().await {
+            return Outcome::Success(Self(claim));
         }
 
         Outcome::Error((Status::Unauthorized, ()))
@@ -247,14 +302,14 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
 
     let res = conn
         .run(move |c| {
-            use crate::schema::users::dsl;
+            use super::schema::users::dsl;
 
             diesel::insert_into(dsl::users)
                 .values(User {
                     id,
                     email: form.email,
                     password: hash,
-                    role_flags: Roles::USER | Roles::ADMIN,
+                    role_flags: Roles::ADMIN,
                 })
                 .on_conflict(dsl::email)
                 .do_update()

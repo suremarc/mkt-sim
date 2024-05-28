@@ -21,11 +21,12 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
-use crate::{
+use super::{
     accounts::{Roles, User},
     types::{Email, Password, Uuid},
-    MetaConn,
 };
+
+use crate::MetaConn;
 
 pub fn routes() -> Vec<Route> {
     openapi_get_routes![login]
@@ -53,7 +54,7 @@ async fn login(
     form: Json<LoginForm>,
     jwt_secret: JwtSecretKey,
 ) -> Result<String, Status> {
-    use crate::schema::users::dsl;
+    use super::schema::users::dsl;
 
     let email = form.email.clone();
     let user: User = conn
@@ -193,10 +194,9 @@ impl<'r, const FLAGS: i64> OpenApiFromRequest<'r> for RoleCheck<FLAGS> {
 }
 
 const ADMIN: i64 = Roles::ADMIN.bits();
-const USER: i64 = Roles::USER.bits();
 
 pub type AdminCheck = RoleCheck<ADMIN>;
-pub type UserCheck = RoleCheck<USER>;
+pub type UserCheck = RoleCheck<0>;
 
 #[async_trait::async_trait]
 impl<'r, const FLAGS: i64> FromRequest<'r> for RoleCheck<FLAGS> {
@@ -205,11 +205,18 @@ impl<'r, const FLAGS: i64> FromRequest<'r> for RoleCheck<FLAGS> {
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let required_roles = Roles::from_bits_truncate(FLAGS);
         let claim = try_outcome!(req.guard::<AuthnClaim>().await);
+
+        // If the required roles is empty, we don't need to do a DB lookup.
+        // As long as the authn claim is validated, we don't need to do any checks
+        if required_roles.is_empty() {
+            return Outcome::Success(Self(claim));
+        }
+
         let conn = try_outcome!(MetaConn::from_request(req).await);
 
         let roles: Roles = try_outcome!(conn
             .run(move |c| {
-                use crate::schema::users::dsl::*;
+                use super::schema::users::dsl::*;
                 users.find(claim.id).select(role_flags).get_result(c)
             })
             .await

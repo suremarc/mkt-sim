@@ -7,17 +7,10 @@ use rocket_okapi::{
     request::{OpenApiFromRequest, RequestHeaderInput},
 };
 use rocket_sync_db_pools::database;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use tigerbeetle_unofficial as tb;
 
-pub mod accounts;
-pub mod assets;
-pub mod auth;
-#[rustfmt::skip]
-pub mod schema;
-pub mod orders;
-pub mod types;
+pub mod api;
+pub mod process;
 
 #[database("meta")]
 pub struct MetaConn(pub diesel::SqliteConnection);
@@ -78,29 +71,4 @@ impl Pool for AccountingPool {
     }
 
     async fn close(&self) {}
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub(crate) struct List<T> {
-    #[serde(default, skip_serializing_if = "is_zero")]
-    #[schemars(example = "example_count")]
-    pub count: usize,
-    pub items: Vec<T>,
-}
-
-fn example_count() -> usize {
-    1
-}
-
-fn is_zero(num: &usize) -> bool {
-    *num == 0
-}
-
-impl<T> From<Vec<T>> for List<T> {
-    fn from(value: Vec<T>) -> Self {
-        Self {
-            count: value.len(),
-            items: value,
-        }
-    }
 }

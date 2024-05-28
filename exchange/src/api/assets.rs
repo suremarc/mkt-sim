@@ -19,12 +19,10 @@ use serde::{Deserialize, Serialize};
 use strum_macros::{EnumString, IntoStaticStr};
 use tracing::error;
 
-use crate::{
-    auth::{AdminCheck, UserCheck},
-    MetaConn,
-};
+use super::auth::{AdminCheck, UserCheck};
 
 use super::List;
+use crate::MetaConn;
 
 pub fn routes() -> Vec<Route> {
     openapi_get_routes![
@@ -39,7 +37,7 @@ pub fn routes() -> Vec<Route> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, JsonSchema)]
-#[diesel(table_name = crate::schema::equities)]
+#[diesel(table_name = super::schema::equities)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Equity {
     /// A unique identifier for equity assets.
@@ -55,7 +53,7 @@ pub struct Equity {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, JsonSchema)]
-#[diesel(table_name = crate::schema::equity_options)]
+#[diesel(table_name = super::schema::equity_options)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct EquityOption {
     /// A unique identifier for equity options.
@@ -80,7 +78,7 @@ pub struct EquityOption {
 #[openapi]
 #[get("/equities")]
 async fn list_equities(_check: UserCheck, conn: MetaConn) -> Result<Json<List<Equity>>, Status> {
-    conn.run(|c| crate::schema::equities::dsl::equities.get_results(c))
+    conn.run(|c| super::schema::equities::dsl::equities.get_results(c))
         .await
         .map(List::from)
         .map(Json)
@@ -100,7 +98,7 @@ async fn get_equity_by_id(
     conn: MetaConn,
     id: i32,
 ) -> Result<Json<Equity>, Status> {
-    conn.run(move |c| crate::schema::equities::dsl::equities.find(id).first(c))
+    conn.run(move |c| super::schema::equities::dsl::equities.find(id).first(c))
         .await
         .map(Json)
         .map_err(|e| match e {
@@ -122,7 +120,7 @@ async fn get_equity_by_ticker(
     conn: MetaConn,
     ticker: String,
 ) -> Result<Json<Equity>, Status> {
-    use crate::schema::equities::dsl;
+    use super::schema::equities::dsl;
     conn.run(move |c| dsl::equities.filter(dsl::ticker.eq(ticker)).first(c))
         .await
         .map(Json)
@@ -136,7 +134,7 @@ async fn get_equity_by_ticker(
 }
 
 #[derive(Debug, Clone, Deserialize, Insertable, JsonSchema)]
-#[diesel(table_name = crate::schema::equities)]
+#[diesel(table_name = super::schema::equities)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 struct CreateEquityForm {
     pub ticker: String,
@@ -156,7 +154,7 @@ async fn create_equities(
     form: Json<List<CreateEquityForm>>,
 ) -> Result<Json<List<Equity>>, Status> {
     conn.run(move |c| {
-        use crate::schema::equities::dsl::*;
+        use super::schema::equities::dsl::*;
 
         c.transaction(|c| {
             let n = form.items.len();
@@ -183,7 +181,7 @@ async fn create_equities(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Insertable, JsonSchema)]
-#[diesel(table_name = crate::schema::equity_options)]
+#[diesel(table_name = super::schema::equity_options)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 struct CreateEquityOptionItem {
     /// ID of the equity asset underlying this option.
@@ -210,7 +208,7 @@ async fn create_equity_options(
     conn.run(move |c| {
         c.transaction(|c| {
             let n = form.items.len();
-            use crate::schema::equity_options::dsl::*;
+            use super::schema::equity_options::dsl::*;
             diesel::insert_into(equity_options)
                 .values(&form.items)
                 .execute(c)?;
@@ -246,7 +244,7 @@ async fn list_equity_options_by_underlying_id(
 ) -> Result<Json<List<EquityOption>>, Status> {
     let underlying_id = id;
     conn.run(move |c| {
-        use crate::schema::equity_options::dsl::*;
+        use super::schema::equity_options::dsl::*;
         equity_options
             .filter(underlying.eq(underlying_id))
             .select((
@@ -283,12 +281,12 @@ async fn list_equity_options_by_underlying_ticker(
     ticker: String,
 ) -> Result<Json<List<EquityOption>>, Status> {
     conn.run(move |c| {
-        use crate::schema::{
+        use super::schema::{
             equities::dsl::{self as equities_dsl, equities},
             equity_options::dsl::*,
         };
 
-        crate::schema::equity_options::dsl::equity_options
+        super::schema::equity_options::dsl::equity_options
             .inner_join(equities)
             .filter(equities_dsl::ticker.eq(ticker))
             .select((

@@ -67,7 +67,7 @@ docker:
     COPY +install-diesel/diesel /usr/local/bin
 
     ENTRYPOINT ["/opt/exchange/bin/exchange"]
-    CMD ["serve"]
+    CMD ["api"]
 
     ARG EARTHLY_GIT_HASH
     SAVE IMAGE --push suremarc/mkt-sim-exchange suremarc/mkt-sim-exchange:$EARTHLY_GIT_HASH
