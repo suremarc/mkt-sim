@@ -8,12 +8,12 @@ use rocket::{
     post,
     request::{FromRequest, Outcome},
     serde::json::Json,
-    Request, Route,
+    Request,
 };
 use rocket_okapi::{
     gen::OpenApiGenerator,
     okapi::openapi3::{SecurityRequirement, SecurityScheme, SecuritySchemeData},
-    openapi, openapi_get_routes,
+    openapi,
     request::{OpenApiFromRequest, RequestHeaderInput},
 };
 use schemars::JsonSchema;
@@ -28,12 +28,8 @@ use super::{
 
 use crate::MetaConn;
 
-pub fn routes() -> Vec<Route> {
-    openapi_get_routes![login]
-}
-
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-struct LoginForm {
+pub struct LoginForm {
     email: Email,
     password: Password,
 }
@@ -48,8 +44,8 @@ pub struct AuthnClaim {
 ///
 /// Returns an auth bearer token that lasts a week from its creation.
 #[openapi]
-#[post("/session", data = "<form>")]
-async fn login(
+#[post("/auth/session", data = "<form>")]
+pub async fn login(
     conn: MetaConn,
     form: Json<LoginForm>,
     jwt_secret: JwtSecretKey,
@@ -96,7 +92,7 @@ async fn login(
     })
 }
 
-struct JwtSecretKey(SecretString);
+pub struct JwtSecretKey(SecretString);
 
 impl Deref for JwtSecretKey {
     type Target = SecretString;

@@ -12,8 +12,8 @@ use diesel::{
     sql_types::{Integer, Text},
     Connection, ExpressionMethods, QueryDsl, Queryable, RunQueryDsl, Selectable,
 };
-use rocket::{get, http::Status, post, serde::json::Json, Route};
-use rocket_okapi::{openapi, openapi_get_routes};
+use rocket::{get, http::Status, post, serde::json::Json};
+use rocket_okapi::openapi;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum_macros::{EnumString, IntoStaticStr};
@@ -23,18 +23,6 @@ use super::auth::{AdminCheck, UserCheck};
 
 use super::List;
 use crate::MetaConn;
-
-pub fn routes() -> Vec<Route> {
-    openapi_get_routes![
-        create_equities,
-        get_equity_by_id,
-        get_equity_by_ticker,
-        list_equities,
-        create_equity_options,
-        list_equity_options_by_underlying_ticker,
-        list_equity_options_by_underlying_id
-    ]
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, JsonSchema)]
 #[diesel(table_name = super::schema::equities)]
@@ -76,8 +64,11 @@ pub struct EquityOption {
 ///
 /// List details for all equity assets.
 #[openapi]
-#[get("/equities")]
-async fn list_equities(_check: UserCheck, conn: MetaConn) -> Result<Json<List<Equity>>, Status> {
+#[get("/assets/equities")]
+pub async fn list_equities(
+    _check: UserCheck,
+    conn: MetaConn,
+) -> Result<Json<List<Equity>>, Status> {
     conn.run(|c| super::schema::equities::dsl::equities.get_results(c))
         .await
         .map(List::from)
@@ -92,8 +83,8 @@ async fn list_equities(_check: UserCheck, conn: MetaConn) -> Result<Json<List<Eq
 ///
 /// Get details for an equity asset.
 #[openapi]
-#[get("/equities/<id>", rank = 0)]
-async fn get_equity_by_id(
+#[get("/assets/equities/<id>", rank = 0)]
+pub async fn get_equity_by_id(
     _check: UserCheck,
     conn: MetaConn,
     id: i32,
@@ -114,8 +105,8 @@ async fn get_equity_by_id(
 ///
 /// Get details for an equity asset with the given ticker.
 #[openapi]
-#[get("/equities/<ticker>", rank = 1)]
-async fn get_equity_by_ticker(
+#[get("/assets/equities/<ticker>", rank = 1)]
+pub async fn get_equity_by_ticker(
     _check: UserCheck,
     conn: MetaConn,
     ticker: String,
@@ -136,7 +127,7 @@ async fn get_equity_by_ticker(
 #[derive(Debug, Clone, Deserialize, Insertable, JsonSchema)]
 #[diesel(table_name = super::schema::equities)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-struct CreateEquityForm {
+pub struct CreateEquityForm {
     pub ticker: String,
     pub description: Option<String>,
 }
@@ -147,8 +138,8 @@ sql_function!(fn last_insert_rowid() -> Integer);
 ///
 /// Batch endpoint for registering equities.
 #[openapi]
-#[post("/equities", data = "<form>")]
-async fn create_equities(
+#[post("/assets/equities", data = "<form>")]
+pub async fn create_equities(
     _check: AdminCheck,
     conn: MetaConn,
     form: Json<List<CreateEquityForm>>,
@@ -183,7 +174,7 @@ async fn create_equities(
 #[derive(Debug, Clone, Serialize, Deserialize, Insertable, JsonSchema)]
 #[diesel(table_name = super::schema::equity_options)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-struct CreateEquityOptionItem {
+pub struct CreateEquityOptionItem {
     /// ID of the equity asset underlying this option.
     pub underlying: i32,
     /// Date that this contract expires.
@@ -199,8 +190,8 @@ struct CreateEquityOptionItem {
 /// Batch endpoint for creating equity options.
 /// The underlying equity asset must be registered already.
 #[openapi]
-#[post("/equities/options", data = "<form>")]
-async fn create_equity_options(
+#[post("/assets/equities/options", data = "<form>")]
+pub async fn create_equity_options(
     _check: AdminCheck,
     conn: MetaConn,
     form: Json<List<CreateEquityOptionItem>>,
@@ -236,8 +227,8 @@ async fn create_equity_options(
 ///
 /// List all equity options derived from a given underlying equity asset.
 #[openapi]
-#[get("/equities/<id>/options", rank = 0)]
-async fn list_equity_options_by_underlying_id(
+#[get("/assets/equities/<id>/options", rank = 0)]
+pub async fn list_equity_options_by_underlying_id(
     _check: UserCheck,
     conn: MetaConn,
     id: i32,
@@ -274,8 +265,8 @@ async fn list_equity_options_by_underlying_id(
 ///
 /// List all equity options derived from an underlying equity asset with the given ticker.
 #[openapi]
-#[get("/equities/<ticker>/options", rank = 1)]
-async fn list_equity_options_by_underlying_ticker(
+#[get("/assets/equities/<ticker>/options", rank = 1)]
+pub async fn list_equity_options_by_underlying_ticker(
     _check: UserCheck,
     conn: MetaConn,
     ticker: String,

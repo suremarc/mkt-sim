@@ -17,7 +17,7 @@ use rocket::{
     post,
     request::{FromRequest, Outcome},
     serde::json::Json,
-    Build, Request, Rocket, Route,
+    Build, Request, Rocket,
 };
 use rocket_db_pools::{
     deadpool_redis::redis::{self},
@@ -25,7 +25,7 @@ use rocket_db_pools::{
 };
 use rocket_okapi::{
     gen::OpenApiGenerator,
-    openapi, openapi_get_routes,
+    openapi,
     request::{OpenApiFromRequest, RequestHeaderInput},
 };
 use schemars::{
@@ -52,17 +52,6 @@ use diesel::{
 };
 
 use super::List;
-
-pub fn routes() -> Vec<Route> {
-    openapi_get_routes![
-        register,
-        get_account_by_id,
-        list_accounts,
-        get_equities_for_account,
-        submit_orders_for_account,
-        list_orders_for_account,
-    ]
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable, JsonSchema)]
 #[diesel(table_name = super::schema::users)]
@@ -126,8 +115,8 @@ where
 ///
 /// Fetches a single account by ID.
 #[openapi]
-#[get("/<id>")]
-async fn get_account_by_id(
+#[get("/accounts/<id>")]
+pub async fn get_account_by_id(
     _check: UserIdCheck,
     conn: MetaConn,
     id: Uuid,
@@ -146,8 +135,8 @@ async fn get_account_by_id(
 
 /// # List all accounts
 #[openapi]
-#[get("/")]
-async fn list_accounts(_check: AdminCheck, conn: MetaConn) -> Result<Json<List<User>>, Status> {
+#[get("/accounts")]
+pub async fn list_accounts(_check: AdminCheck, conn: MetaConn) -> Result<Json<List<User>>, Status> {
     conn.run(|c| dsl::users.load(c))
         .await
         .map(List::from)
@@ -159,7 +148,7 @@ async fn list_accounts(_check: AdminCheck, conn: MetaConn) -> Result<Json<List<U
 }
 
 #[derive(Deserialize, JsonSchema)]
-struct NewAccountForm {
+pub struct NewAccountForm {
     email: Email,
     password: Password,
 }
@@ -168,8 +157,8 @@ struct NewAccountForm {
 ///
 /// Create a new account.
 #[openapi]
-#[post("/", data = "<form>")]
-async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<User>, Status> {
+#[post("/accounts", data = "<form>")]
+pub async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<User>, Status> {
     let form = form.0;
 
     let id = Uuid(uuid::Uuid::new_v4());
@@ -205,15 +194,15 @@ async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<Use
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
-struct Holdings {
+pub struct Holdings {
     asset_id: i32,
     amount: i128,
 }
 
 /// List equity holdings for an account.
 #[openapi]
-#[get("/<id>/equities")]
-async fn get_equities_for_account(
+#[get("/accounts/<id>/equities")]
+pub async fn get_equities_for_account(
     _check: UserIdCheck,
     id: Uuid,
     meta: MetaConn,
@@ -312,8 +301,8 @@ impl ToRedisArgs for OrderType {
 
 /// Submit an order for an equity asset.
 #[openapi]
-#[post("/<id>/assets/<asset_id>/orders", data = "<form>")]
-async fn submit_orders_for_account(
+#[post("/accounts/<id>/assets/<asset_id>/orders", data = "<form>")]
+pub async fn submit_orders_for_account(
     _check: UserIdCheck,
     id: Uuid,
     asset_id: i32,
@@ -340,8 +329,8 @@ async fn submit_orders_for_account(
 }
 
 #[openapi]
-#[get("/<id>/assets/orders?<cursor>")]
-async fn list_orders_for_account(
+#[get("/accounts/<id>/assets/orders?<cursor>")]
+pub async fn list_orders_for_account(
     _check: UserIdCheck,
     mut orders: Connection<Orders>,
     id: Uuid,
@@ -373,7 +362,7 @@ async fn list_orders_for_account(
 }
 
 #[allow(unused)]
-struct UserIdCheck(pub AuthnClaim);
+pub struct UserIdCheck(pub AuthnClaim);
 
 #[async_trait::async_trait]
 impl<'r> FromRequest<'r> for UserIdCheck {

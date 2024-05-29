@@ -8,6 +8,7 @@ use rocket_db_pools::{
     Database,
 };
 use rocket_okapi::{
+    openapi_get_routes,
     settings::UrlObject,
     swagger_ui::{make_swagger_ui, SwaggerUIConfig},
 };
@@ -17,12 +18,11 @@ use tracing::error;
 
 use crate::{Accounting, MetaConn, Orders};
 
-pub mod accounts;
-pub mod assets;
-pub mod auth;
+mod accounts;
+mod assets;
+mod auth;
 #[rustfmt::skip]
 pub mod schema;
-pub mod orders;
 pub mod types;
 
 pub fn rocket() -> Rocket<Build> {
@@ -31,24 +31,36 @@ pub fn rocket() -> Rocket<Build> {
         .attach(Accounting::init())
         .attach(Orders::init())
         .attach(AdHoc::try_on_ignite("migrate", migrate))
-        .mount("/assets", assets::routes())
-        .mount("/accounts", accounts::routes())
-        .mount("/auth", auth::routes())
+        .mount(
+            "/",
+            openapi_get_routes![
+                accounts::register,
+                accounts::get_account_by_id,
+                accounts::list_accounts,
+                accounts::get_equities_for_account,
+                accounts::submit_orders_for_account,
+                accounts::list_orders_for_account,
+                assets::create_equities,
+                assets::get_equity_by_id,
+                assets::get_equity_by_ticker,
+                assets::list_equities,
+                assets::create_equity_options,
+                assets::list_equity_options_by_underlying_id,
+                assets::list_equity_options_by_underlying_ticker,
+                auth::login,
+            ],
+        )
         .mount(
             "/swagger",
             make_swagger_ui(&SwaggerUIConfig {
-                urls: vec![
-                    UrlObject::new("Assets", "../assets/openapi.json"),
-                    UrlObject::new("Accounts", "../accounts/openapi.json"),
-                    UrlObject::new("Authentication", "../auth/openapi.json"),
-                ],
+                urls: vec![UrlObject::new("API", "../openapi.json")],
                 ..Default::default()
             }),
         )
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub(crate) struct List<T> {
+pub struct List<T> {
     #[serde(default, skip_serializing_if = "is_zero")]
     #[schemars(example = "example_count")]
     pub count: usize,
@@ -79,7 +91,7 @@ impl<T: FromRedisValue> FromRedisValue for List<T> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub(crate) struct CursorList<T> {
+pub struct CursorList<T> {
     #[serde(flatten)]
     inner: List<T>,
 
