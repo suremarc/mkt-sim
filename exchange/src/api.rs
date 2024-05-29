@@ -78,6 +78,37 @@ impl<T: FromRedisValue> FromRedisValue for List<T> {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct CursorList<T> {
+    #[serde(flatten)]
+    inner: List<T>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<usize>,
+}
+
+impl<T: FromRedisValue> FromRedisValue for CursorList<T> {
+    fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
+        if !v.looks_like_cursor() {
+            return Err(redis::RedisError::from((
+                redis::ErrorKind::TypeError,
+                "expected cursor repsonse",
+            )));
+        }
+
+        match *v {
+            redis::Value::Bulk(ref items) => {
+                let cursor = usize::from_redis_value(&items[0])?;
+                Ok(Self {
+                    inner: List::from_redis_value(&items[1])?,
+                    cursor: (cursor > 0).then_some(cursor),
+                })
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
 async fn migrate(rocket: Rocket<Build>) -> fairing::Result {
     const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 

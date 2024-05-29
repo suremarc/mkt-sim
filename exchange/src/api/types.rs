@@ -187,6 +187,7 @@ impl<'a> FromParam<'a> for Uuid {
 
 impl FromRedisValue for Uuid {
     fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
+        dbg!(v);
         match *v {
             redis::Value::Data(ref bytes) => uuid::Uuid::from_slice(bytes)
                 .map_err(|e| {
@@ -199,7 +200,11 @@ impl FromRedisValue for Uuid {
                 .map(Self),
             _ => Err(redis::RedisError::from((
                 redis::ErrorKind::TypeError,
-                "Response type not uuid compatible.",
+                "Response was of incompatible type",
+                format!(
+                    "{:?} (response was {:?})",
+                    "Response type not uuid compatible.", v
+                ),
             ))),
         }
     }

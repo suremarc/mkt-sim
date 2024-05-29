@@ -31,7 +31,7 @@ diesel-setup:
     ENV DATABASE_URL=sqlite://$DATABASE_PATH
     RUN diesel migration run
     SAVE ARTIFACT $DATABASE_PATH AS LOCAL $DATABASE_PATH
-    SAVE ARTIFACT src/schema.rs AS LOCAL src/schema.rs
+    SAVE ARTIFACT src/api/schema.rs AS LOCAL src/api/schema.rs
 
 build-debug:
     FROM +copy-src

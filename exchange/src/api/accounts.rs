@@ -9,6 +9,7 @@ use diesel::{
     ExpressionMethods, QueryDsl, RunQueryDsl,
 };
 use itertools::Itertools;
+use redis::ToRedisArgs;
 use redis_derive::{FromRedisValue, ToRedisArgs};
 use rocket::{
     fairing, get,
@@ -41,6 +42,7 @@ use super::{
     auth::{AdminCheck, AuthnClaim, RoleCheck, UserCheck},
     schema::users::dsl,
     types::{Email, Password, Uuid},
+    CursorList,
 };
 
 use crate::{Accounting, MetaConn, Orders};
@@ -250,21 +252,25 @@ async fn get_equities_for_account(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToRedisArgs, FromRedisValue)]
-pub struct Order {
+pub struct OrderBookEntry {
     pub account_id: Uuid,
+    pub asset_id: i32,
     pub price: i32,
-    pub qty: u32,
+    pub size: u32,
     pub side: Side,
-    pub r#type: OrderType,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, ToRedisArgs, FromRedisValue)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "order_type")]
 pub enum OrderType {
     Market,
-    Limit,
+    Limit { price: i32 },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, ToRedisArgs, FromRedisValue)]
+#[serde(rename_all = "snake_case")]
+#[redis(rename_all = "snake_case")]
 pub enum Side {
     Buy,
     Sell,
@@ -272,16 +278,36 @@ pub enum Side {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CreateOrderForm {
-    pub price: i32,
-    pub qty: u32,
+    pub size: u32,
     pub side: Side,
-    pub r#type: OrderType,
+    #[serde(flatten)]
+    pub order_type: OrderType,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToRedisArgs)]
-struct OrderBookKey {
-    side: Side,
-    asset_id: i32,
+impl ToRedisArgs for CreateOrderForm {
+    fn write_redis_args<W>(&self, out: &mut W)
+    where
+        W: ?Sized + redis::RedisWrite,
+    {
+        self.size.write_redis_args(out);
+        self.side.write_redis_args(out);
+        self.order_type.write_redis_args(out);
+    }
+}
+
+impl ToRedisArgs for OrderType {
+    fn write_redis_args<W>(&self, out: &mut W)
+    where
+        W: ?Sized + redis::RedisWrite,
+    {
+        match self {
+            OrderType::Market => "market".write_redis_args(out),
+            OrderType::Limit { price } => {
+                "limit".write_redis_args(out);
+                price.write_redis_args(out);
+            }
+        }
+    }
 }
 
 /// Submit an order for an equity asset.
@@ -293,64 +319,50 @@ async fn submit_orders_for_account(
     asset_id: i32,
     mut orders: Connection<Orders>,
     form: Json<CreateOrderForm>,
-) -> Result<(), Status> {
+) -> Result<String, Status> {
     let order_id = Uuid(uuid::Uuid::now_v7());
 
-    redis::Pipeline::new()
-        .atomic()
-        .zadd(
-            OrderBookKey {
-                side: form.side,
-                asset_id,
-            },
-            order_id,
-            form.price,
-        )
-        .ignore()
-        .sadd(id, order_id)
-        .ignore()
-        .cmd("HSET")
-        .arg(order_id)
-        .arg(Order {
-            account_id: id,
-            price: form.price,
-            qty: form.qty,
-            side: form.side,
-            r#type: form.r#type,
-        })
-        .ignore()
-        .query_async(orders.as_mut())
+    redis::Script::new(include_str!("scripts/order.lua"))
+        .prepare_invoke()
+        .key(asset_id)
+        .key(format!("{asset_id}_ask"))
+        .key(format!("{asset_id}_bid"))
+        .key(id)
+        .key(order_id)
+        .arg(form.0)
+        .invoke_async(orders.as_mut())
         .await
+        .map(|v: i32| format!("{v}"))
         .map_err(|e| {
             error!("error submitting order: {e}");
             Status::InternalServerError
-        })?;
-
-    Ok(())
+        })
 }
 
 #[openapi]
-#[get("/<id>/assets/orders")]
+#[get("/<id>/assets/orders?<cursor>")]
 async fn list_orders_for_account(
     _check: UserIdCheck,
-    id: Uuid,
     mut orders: Connection<Orders>,
-) -> Result<Json<List<Order>>, Status> {
+    id: Uuid,
+    cursor: Option<usize>,
+) -> Result<Json<CursorList<OrderBookEntry>>, Status> {
     let script = redis::Script::new(
         r"
-        local keys = redis.call('SMEMBERS', KEYS[1])
+        local cursor, keys = unpack(redis.call('ZSCAN', KEYS[1], ARGV[1]))
         local results = {}
-        for i, key in ipairs(keys) do
-            local hash = redis.call('HGETALL', key)
+        for i = 1, #keys, 2 do
+            local hash = redis.call('HGETALL', keys[i])
             table.insert(results, hash)
         end
-        return results
+        return {cursor, results}
     ",
     );
 
     script
         .prepare_invoke()
         .key(id)
+        .arg(cursor.unwrap_or_default())
         .invoke_async(orders.as_mut())
         .await
         .map(Json)
@@ -399,7 +411,7 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
         Ok(form) => form,
     };
 
-    let id = Uuid(uuid::Uuid::nil());
+    let id = Uuid(uuid::Uuid::max());
     let hash = match bcrypt::hash(form.password.expose_secret(), bcrypt::DEFAULT_COST)
         .map(SecretString::new)
         .map(Password)
