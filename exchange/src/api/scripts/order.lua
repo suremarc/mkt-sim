@@ -44,7 +44,7 @@ for _, matching_order_id in ipairs(candidates) do
     end
 end
 
-if order_type == 'limit' then
+if order_type == 'limit' and size > 0 then
     -- add remaining quantity to the order book_to_match
     redis.call('ZADD', book_to_insert, score, order_id)
     redis.call('HSET', order_id, 
