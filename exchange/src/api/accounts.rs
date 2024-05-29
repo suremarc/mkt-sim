@@ -339,19 +339,11 @@ async fn list_orders_for_account(
     let script = redis::Script::new(
         r"
         local keys = redis.call('SMEMBERS', KEYS[1])
-        redis.log(redis.LOG_WARNING, keys)
         local results = {}
         for i, key in ipairs(keys) do
-            redis.log(redis.LOG_WARNING, key)
             local hash = redis.call('HGETALL', key)
-            -- Convert hash from flat list to a more structured table
-            local structured_hash = {}
-            for j = 1, #hash, 2 do
-                structured_hash[hash[j]] = hash[j + 1]
-            end
-            table.insert(results, {key, structured_hash})
+            table.insert(results, hash)
         end
-        redis.log(redis.LOG_WARNING, 'success')
         return results
     ",
     );

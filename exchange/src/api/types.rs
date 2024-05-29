@@ -186,8 +186,22 @@ impl<'a> FromParam<'a> for Uuid {
 }
 
 impl FromRedisValue for Uuid {
-    fn from_redis_value(_v: &redis::Value) -> redis::RedisResult<Self> {
-        todo!()
+    fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
+        match *v {
+            redis::Value::Data(ref bytes) => uuid::Uuid::from_slice(bytes)
+                .map_err(|e| {
+                    redis::RedisError::from((
+                        redis::ErrorKind::TypeError,
+                        "Value is not a valid UUID",
+                        e.to_string(),
+                    ))
+                })
+                .map(Self),
+            _ => Err(redis::RedisError::from((
+                redis::ErrorKind::TypeError,
+                "Response type not uuid compatible.",
+            ))),
+        }
     }
 }
 
