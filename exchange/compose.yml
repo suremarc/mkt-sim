@@ -21,14 +21,14 @@ services:
           ./tigerbeetle format --cluster=0 --replica=0 --replica-count=1 /data/0_0.tigerbeetle
         fi
 
-  valkey:
-    image: docker.io/bitnami/valkey:7.2
+  redis:
+    image: redis/redis-stack-server:7.2.0-v10
     restart: always
     ports:
       - '6379:6379'
     environment:
       - ALLOW_EMPTY_PASSWORD=yes
-    volumes: [ valkey:/bitnami/valkey/data ]
+    volumes: [ redis:/data ]
 
   exchange:
     image: suremarc/mkt-sim-exchange
@@ -46,5 +46,5 @@ services:
 volumes:
   tigerbeetle:
     driver: local
-  valkey:
+  redis:
     driver: local

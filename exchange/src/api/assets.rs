@@ -12,6 +12,7 @@ use diesel::{
     sql_types::{Integer, Text},
     Connection, ExpressionMethods, QueryDsl, Queryable, RunQueryDsl, Selectable,
 };
+use redis::FromRedisValue;
 use rocket::{get, http::Status, post, serde::json::Json};
 use rocket_okapi::openapi;
 use schemars::JsonSchema;
@@ -19,10 +20,14 @@ use serde::{Deserialize, Serialize};
 use strum_macros::{EnumString, IntoStaticStr};
 use tracing::error;
 
-use super::auth::{AdminCheck, UserCheck};
+use super::{
+    accounts::Book,
+    auth::{AdminCheck, UserCheck},
+    CursorList,
+};
 
 use super::List;
-use crate::MetaConn;
+use crate::{MetaConn, Orders};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, JsonSchema)]
 #[diesel(table_name = super::schema::equities)]
@@ -301,6 +306,56 @@ pub async fn list_equity_options_by_underlying_ticker(
             Status::InternalServerError
         }
     })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AnonymizedOrderBookEntry {
+    pub price: i32,
+    pub size: u32,
+}
+
+impl FromRedisValue for AnonymizedOrderBookEntry {
+    fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
+        <(i32, u32)>::from_redis_value(v).map(|(price, size)| Self { price, size })
+    }
+}
+
+/// # Get Order Book
+///
+/// Show the current state of the order book for a given asset.
+#[openapi(tag = "Assets")]
+#[get("/assets/<id>/<book>?<cursor>", rank = 3)]
+pub async fn get_order_book(
+    _check: UserCheck,
+    id: i32,
+    book: Book,
+    cursor: Option<usize>,
+    mut orders: rocket_db_pools::Connection<Orders>,
+) -> Result<Json<CursorList<AnonymizedOrderBookEntry>>, Status> {
+    let script = redis::Script::new(
+        r"
+        local cursor, keys = unpack(redis.call('ZSCAN', KEYS[1], ARGV[1]))
+        local results = {}
+        for i = 1, #keys, 2 do
+            local hash = redis.call('HMGET', keys[i], 'price', 'size')
+            table.insert(results, hash)
+        end
+
+        return {cursor, results}
+    ",
+    );
+
+    script
+        .prepare_invoke()
+        .key(format!("{id}_{book}"))
+        .arg(cursor.unwrap_or_default())
+        .invoke_async(orders.as_mut())
+        .await
+        .map(Json)
+        .map_err(|e| {
+            error!("error listing orders: {e}");
+            Status::InternalServerError
+        })
 }
 
 #[derive(

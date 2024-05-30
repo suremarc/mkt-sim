@@ -1,7 +1,7 @@
 -- Match an order (market or limit)
 
-local asset_id, book_ask, book_bid, account_id, order_id = unpack(KEYS)
-local size, side, order_type, price = unpack(ARGV)
+local asset_id, book_bid, book_offer, account_id, order_id = unpack(KEYS)
+local side, size, order_type, price = unpack(ARGV)
 local size = tonumber(size)
 local price = tonumber(price or 0)
 
@@ -9,17 +9,17 @@ local book_to_match
 local book_to_insert
 local lower, upper
 local score
-if side == 'buy' then
+if side == 'bids' then
     -- Process buy order, match with asks
-    book_to_match = book_ask
+    book_to_match = book_offer
     book_to_insert = book_bid
     score = -price
-    lower, upper = price, math.huge
-elseif side == 'sell' then
+    lower, upper = -math.huge, price
+elseif side == 'offers' then
     book_to_match = book_bid
-    book_to_insert = book_ask
+    book_to_insert = book_offer
     score = price
-    lower, upper = -math.huge, -price
+    lower, upper = -price, math.huge
 end
 
 local candidates = redis.call('ZRANGE', book_to_match, lower, upper, 'BYSCORE')
@@ -51,8 +51,7 @@ if order_type == 'limit' and size > 0 then
         'account_id', account_id, 
         'asset_id', asset_id, 
         'price', price,
-        'size', size,
-        'side', side
+        'size', size
     )
     redis.call('ZADD', account_id, 0, order_id)
 end

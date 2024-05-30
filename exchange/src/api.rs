@@ -47,6 +47,7 @@ pub fn rocket() -> Rocket<Build> {
                 assets::create_equity_options,
                 assets::list_equity_options_by_underlying_id,
                 assets::list_equity_options_by_underlying_ticker,
+                assets::get_order_book,
                 auth::login,
             ],
         )

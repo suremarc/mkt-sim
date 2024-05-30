@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use bitflags::bitflags;
 use diesel::{
     backend::Backend,
@@ -15,7 +17,7 @@ use rocket::{
     fairing, get,
     http::Status,
     post,
-    request::{FromRequest, Outcome},
+    request::{FromParam, FromRequest, Outcome},
     serde::json::Json,
     Build, Request, Rocket,
 };
@@ -246,7 +248,6 @@ pub struct OrderBookEntry {
     pub asset_id: i32,
     pub price: i32,
     pub size: u32,
-    pub side: Side,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
@@ -260,15 +261,35 @@ pub enum OrderType {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, ToRedisArgs, FromRedisValue)]
 #[serde(rename_all = "snake_case")]
 #[redis(rename_all = "snake_case")]
-pub enum Side {
-    Buy,
-    Sell,
+pub enum Book {
+    Bids,
+    Offers,
+}
+
+impl<'a> FromParam<'a> for Book {
+    type Error = Box<dyn std::error::Error + Send + Sync>;
+
+    fn from_param(param: &'a str) -> Result<Self, Self::Error> {
+        match param {
+            "bids" => Ok(Book::Bids),
+            "offers" => Ok(Book::Offers),
+            _ => Err(format!("invalid book: {param}").into()),
+        }
+    }
+}
+
+impl Display for Book {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bids => write!(f, "bids"),
+            Self::Offers => write!(f, "offers"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CreateOrderForm {
     pub size: u32,
-    pub side: Side,
     #[serde(flatten)]
     pub order_type: OrderType,
 }
@@ -279,7 +300,6 @@ impl ToRedisArgs for CreateOrderForm {
         W: ?Sized + redis::RedisWrite,
     {
         self.size.write_redis_args(out);
-        self.side.write_redis_args(out);
         self.order_type.write_redis_args(out);
     }
 }
@@ -301,11 +321,12 @@ impl ToRedisArgs for OrderType {
 
 /// Submit an order for an equity asset.
 #[openapi(tag = "Accounts")]
-#[post("/accounts/<id>/assets/<asset_id>/orders", data = "<form>")]
+#[post("/accounts/<id>/assets/<asset_id>/<book>", data = "<form>")]
 pub async fn submit_orders_for_account(
     _check: UserIdCheck,
     id: Uuid,
     asset_id: i32,
+    book: Book,
     mut orders: Connection<Orders>,
     form: Json<CreateOrderForm>,
 ) -> Result<String, Status> {
@@ -314,10 +335,11 @@ pub async fn submit_orders_for_account(
     redis::Script::new(include_str!("scripts/order.lua"))
         .prepare_invoke()
         .key(asset_id)
-        .key(format!("{asset_id}_ask"))
-        .key(format!("{asset_id}_bid"))
+        .key(format!("{asset_id}_bids"))
+        .key(format!("{asset_id}_offers"))
         .key(id)
         .key(order_id)
+        .arg(book)
         .arg(form.0)
         .invoke_async(orders.as_mut())
         .await
@@ -370,7 +392,8 @@ impl<'r> FromRequest<'r> for UserIdCheck {
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         if let Outcome::Success(RoleCheck(claim)) = req.guard::<UserCheck>().await {
-            if claim.id.0 == req.param::<uuid::Uuid>(0).unwrap().unwrap() {
+            // TODO: figure out the relevant parameter dynamically
+            if claim.id == req.param::<Uuid>(1).unwrap().unwrap() {
                 return Outcome::Success(Self(claim));
             }
         } else if let Outcome::Success(RoleCheck(claim)) = req.guard::<AdminCheck>().await {
