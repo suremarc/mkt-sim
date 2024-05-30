@@ -63,7 +63,7 @@ pub struct EquityOption {
 /// # Get Equities
 ///
 /// List details for all equity assets.
-#[openapi]
+#[openapi(tag = "Assets")]
 #[get("/assets/equities")]
 pub async fn list_equities(
     _check: UserCheck,
@@ -82,7 +82,7 @@ pub async fn list_equities(
 /// # Get Equity
 ///
 /// Get details for an equity asset.
-#[openapi]
+#[openapi(tag = "Assets")]
 #[get("/assets/equities/<id>", rank = 0)]
 pub async fn get_equity_by_id(
     _check: UserCheck,
@@ -104,7 +104,7 @@ pub async fn get_equity_by_id(
 /// # Get Equity by Ticker
 ///
 /// Get details for an equity asset with the given ticker.
-#[openapi]
+#[openapi(tag = "Assets")]
 #[get("/assets/equities/<ticker>", rank = 1)]
 pub async fn get_equity_by_ticker(
     _check: UserCheck,
@@ -137,7 +137,7 @@ sql_function!(fn last_insert_rowid() -> Integer);
 /// # Create Equities
 ///
 /// Batch endpoint for registering equities.
-#[openapi]
+#[openapi(tag = "Assets")]
 #[post("/assets/equities", data = "<form>")]
 pub async fn create_equities(
     _check: AdminCheck,
@@ -189,7 +189,7 @@ pub struct CreateEquityOptionItem {
 ///
 /// Batch endpoint for creating equity options.
 /// The underlying equity asset must be registered already.
-#[openapi]
+#[openapi(tag = "Assets")]
 #[post("/assets/equities/options", data = "<form>")]
 pub async fn create_equity_options(
     _check: AdminCheck,
@@ -226,7 +226,7 @@ pub async fn create_equity_options(
 /// # List Equity Options by Underlying
 ///
 /// List all equity options derived from a given underlying equity asset.
-#[openapi]
+#[openapi(tag = "Assets")]
 #[get("/assets/equities/<id>/options", rank = 0)]
 pub async fn list_equity_options_by_underlying_id(
     _check: UserCheck,
@@ -264,7 +264,7 @@ pub async fn list_equity_options_by_underlying_id(
 /// # List Equity Options By Underlying Ticker
 ///
 /// List all equity options derived from an underlying equity asset with the given ticker.
-#[openapi]
+#[openapi(tag = "Assets")]
 #[get("/assets/equities/<ticker>/options", rank = 1)]
 pub async fn list_equity_options_by_underlying_ticker(
     _check: UserCheck,

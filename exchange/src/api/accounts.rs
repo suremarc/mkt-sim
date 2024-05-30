@@ -114,7 +114,7 @@ where
 /// # Get account
 ///
 /// Fetches a single account by ID.
-#[openapi]
+#[openapi(tag = "Accounts")]
 #[get("/accounts/<id>")]
 pub async fn get_account_by_id(
     _check: UserIdCheck,
@@ -134,7 +134,7 @@ pub async fn get_account_by_id(
 }
 
 /// # List all accounts
-#[openapi]
+#[openapi(tag = "Accounts")]
 #[get("/accounts")]
 pub async fn list_accounts(_check: AdminCheck, conn: MetaConn) -> Result<Json<List<User>>, Status> {
     conn.run(|c| dsl::users.load(c))
@@ -156,7 +156,7 @@ pub struct NewAccountForm {
 /// # Create Account
 ///
 /// Create a new account.
-#[openapi]
+#[openapi(tag = "Accounts")]
 #[post("/accounts", data = "<form>")]
 pub async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<User>, Status> {
     let form = form.0;
@@ -200,7 +200,7 @@ pub struct Holdings {
 }
 
 /// List equity holdings for an account.
-#[openapi]
+#[openapi(tag = "Accounts")]
 #[get("/accounts/<id>/equities")]
 pub async fn get_equities_for_account(
     _check: UserIdCheck,
@@ -300,7 +300,7 @@ impl ToRedisArgs for OrderType {
 }
 
 /// Submit an order for an equity asset.
-#[openapi]
+#[openapi(tag = "Accounts")]
 #[post("/accounts/<id>/assets/<asset_id>/orders", data = "<form>")]
 pub async fn submit_orders_for_account(
     _check: UserIdCheck,
@@ -328,7 +328,7 @@ pub async fn submit_orders_for_account(
         })
 }
 
-#[openapi]
+#[openapi(tag = "Accounts")]
 #[get("/accounts/<id>/assets/orders?<cursor>")]
 pub async fn list_orders_for_account(
     _check: UserIdCheck,
