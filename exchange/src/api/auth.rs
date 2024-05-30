@@ -44,7 +44,7 @@ pub struct AuthnClaim {
 ///
 /// Returns an auth bearer token that lasts a week from its creation.
 #[openapi(tag = "Auth")]
-#[post("/auth/session", data = "<form>")]
+#[post("/auth/token", data = "<form>")]
 pub async fn login(
     conn: MetaConn,
     form: Json<LoginForm>,

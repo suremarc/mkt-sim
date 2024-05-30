@@ -33,7 +33,7 @@ A Swagger UI endpoint is available at `/swagger`. Otherwise, a raw OpenAPI spec 
 
 ```bash
 # Get auth token
-curl localhost:8000/auth/session -d '{"email": "user@example.com", "password":"string"}' > token.txt
+curl localhost:8000/auth/token -d '{"email": "user@example.com", "password":"string"}' > token.txt
 
 # List accounts
 curl -H "Authorization: Bearer $(cat token.txt)" localhost:8000/accounts | jq
