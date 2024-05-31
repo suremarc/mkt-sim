@@ -34,12 +34,17 @@ pub struct LoginForm {
     password: Password,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct AuthnClaim {
-    pub id: Uuid,
+    pub account_id: Uuid,
     pub exp: u64,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct AuthResponse {
+    pub claim: AuthnClaim,
+    pub token: String,
+}
 /// # Login
 ///
 /// Returns an auth bearer token that lasts a week from its creation.
@@ -49,7 +54,7 @@ pub async fn login(
     conn: MetaConn,
     form: Json<LoginForm>,
     jwt_secret: JwtSecretKey,
-) -> Result<String, Status> {
+) -> Result<Json<AuthResponse>, Status> {
     use super::schema::users::dsl;
 
     let email = form.email.clone();
@@ -77,7 +82,7 @@ pub async fn login(
     }
 
     let claim = AuthnClaim {
-        id: user.id,
+        account_id: user.id,
         exp: (chrono::offset::Utc::now() + chrono::Days::new(7)).timestamp() as u64,
     };
 
@@ -86,6 +91,7 @@ pub async fn login(
         &claim,
         &jwt::EncodingKey::from_secret(jwt_secret.expose_secret().as_bytes()),
     )
+    .map(|token| Json(AuthResponse { claim, token }))
     .map_err(|e| {
         error!("error encoding jwt: {e}");
         Status::InternalServerError
@@ -213,10 +219,13 @@ impl<'r, const FLAGS: i64> FromRequest<'r> for RoleCheck<FLAGS> {
         let roles: Roles = try_outcome!(conn
             .run(move |c| {
                 use super::schema::users::dsl::*;
-                users.find(claim.id).select(role_flags).get_result(c)
+                users
+                    .find(claim.account_id)
+                    .select(role_flags)
+                    .get_result(c)
             })
             .await
-            .map_err(|e| { error!("error fetching user roles for '{}': {e}", claim.id) })
+            .map_err(|e| { error!("error fetching user roles for '{}': {e}", claim.account_id) })
             .or_error(Status::InternalServerError));
 
         if !roles.contains(required_roles) {

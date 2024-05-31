@@ -471,7 +471,7 @@ impl<'r> FromRequest<'r> for UserIdCheck {
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         if let Outcome::Success(RoleCheck(claim)) = req.guard::<UserCheck>().await {
             // TODO: figure out the relevant parameter dynamically
-            if claim.id == req.param::<Uuid>(1).unwrap().unwrap() {
+            if claim.account_id == req.param::<Uuid>(1).unwrap().unwrap() {
                 return Outcome::Success(Self(claim));
             }
         } else if let Outcome::Success(RoleCheck(claim)) = req.guard::<AdminCheck>().await {
