@@ -39,6 +39,7 @@ pub fn rocket() -> Rocket<Build> {
         .mount(
             "/",
             openapi_get_routes![
+                auth::login,
                 accounts::register,
                 accounts::get_account_by_id,
                 accounts::list_accounts,
@@ -53,7 +54,6 @@ pub fn rocket() -> Rocket<Build> {
                 assets::list_equity_options_by_underlying_id,
                 assets::list_equity_options_by_underlying_ticker,
                 assets::get_order_book,
-                auth::login,
             ],
         )
         .mount(

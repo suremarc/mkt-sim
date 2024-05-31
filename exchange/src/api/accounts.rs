@@ -36,9 +36,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use tigerbeetle_unofficial::{
     self as tb,
-    error::{
-        CreateAccountError, CreateAccountErrorKind, CreateAccountsApiError, CreateAccountsError,
-    },
+    error::{CreateAccountErrorKind, CreateAccountsError},
 };
 use tracing::error;
 
@@ -369,7 +367,6 @@ pub async fn submit_orders_for_account(
                 // TODO: we should technically handle negative prices here...
                 accounting
                     .create_transfers(vec![tb::Transfer::new(order_id.0.as_u128())
-                        .with_code(1)
                         .with_amount(form.size as u128 * price as u128)
                         .with_credit_account_id(account_id.0.as_u128())
                         .with_debit_account_id(ADMIN_ACCOUNT_ID.0.as_u128())])
@@ -385,6 +382,7 @@ pub async fn submit_orders_for_account(
             match accounting
                 .create_accounts(vec![tb::Account::new(asset_account_id, asset_id as u32, 1)
                     .with_user_data_128(account_id.0.as_u128())
+                    .with_user_data_32(asset_id as u32)
                     .with_flags(tb::account::Flags::CREDITS_MUST_NOT_EXCEED_DEBITS)])
                 .await
             {
