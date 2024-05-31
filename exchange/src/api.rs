@@ -15,6 +15,7 @@ use rocket_okapi::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tracing::error;
+use types::Uuid;
 
 use crate::{Accounting, MetaConn, Orders};
 
@@ -24,6 +25,10 @@ mod auth;
 #[rustfmt::skip]
 pub mod schema;
 pub mod types;
+
+pub const ADMIN_ACCOUNT_ID: Uuid = Uuid(uuid::Uuid::from_bytes([
+    0x6e, 0xb6, 0x21, 0x61, 0x0c, 0xdb, 0x47, 0x1a, 0xaf, 0x31, 0x61, 0x94, 0x9f, 0x09, 0x49, 0x5b,
+]));
 
 pub fn rocket() -> Rocket<Build> {
     rocket::build()

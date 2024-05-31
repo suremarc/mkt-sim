@@ -21,10 +21,7 @@ use rocket::{
     serde::json::Json,
     Build, Request, Rocket,
 };
-use rocket_db_pools::{
-    deadpool_redis::redis::{self},
-    Connection,
-};
+use rocket_db_pools::{deadpool_redis::redis, Connection, Database};
 use rocket_okapi::{
     gen::OpenApiGenerator,
     openapi,
@@ -44,7 +41,7 @@ use super::{
     auth::{AdminCheck, AuthnClaim, RoleCheck, UserCheck},
     schema::users::dsl,
     types::{Email, Password, Uuid},
-    CursorList,
+    CursorList, ADMIN_ACCOUNT_ID,
 };
 
 use crate::{Accounting, MetaConn, Orders};
@@ -160,10 +157,14 @@ pub struct NewAccountForm {
 /// Create a new account.
 #[openapi(tag = "Accounts")]
 #[post("/accounts", data = "<form>")]
-pub async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json<User>, Status> {
+pub async fn register(
+    conn: MetaConn,
+    accounting: Connection<Accounting>,
+    form: Json<NewAccountForm>,
+) -> Result<Json<User>, Status> {
     let form = form.0;
 
-    let id = Uuid(uuid::Uuid::new_v4());
+    let account_id = Uuid(uuid::Uuid::new_v4());
     let hash = bcrypt::hash(form.password.expose_secret(), bcrypt::DEFAULT_COST)
         .map(SecretString::new)
         .map(Password)
@@ -172,27 +173,41 @@ pub async fn register(conn: MetaConn, form: Json<NewAccountForm>) -> Result<Json
             Status::InternalServerError
         })?;
 
-    conn.run(move |c| {
-        diesel::insert_into(dsl::users)
-            .values(User {
-                id,
-                email: form.email,
-                password: hash,
-                role_flags: Roles::empty(),
-            })
-            .get_result(c)
-    })
-    .await
-    .map(Json)
-    .map_err(|e| match e {
-        diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
-            Status::Conflict
-        }
-        e => {
-            error!("error inserting user into DB: {e}");
+    let account = conn
+        .run(move |c| {
+            diesel::insert_into(dsl::users)
+                .values(User {
+                    id: account_id,
+                    email: form.email,
+                    password: hash,
+                    role_flags: Roles::empty(),
+                })
+                .get_result(c)
+        })
+        .await
+        .map(Json)
+        .map_err(|e| match e {
+            diesel::result::Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _) => {
+                Status::Conflict
+            }
+            e => {
+                error!("error inserting user into DB: {e}");
+                Status::InternalServerError
+            }
+        })?;
+
+    accounting
+        .create_accounts(vec![tb::Account::new(account_id.0.as_u128(), u32::MAX, 1)
+            .with_user_data_128(account_id.0.as_u128())
+            .with_flags(tb::account::Flags::CREDITS_MUST_NOT_EXCEED_DEBITS)])
+        .await
+        .map_err(|e| {
+            error!("error creating funds account: {e}");
             Status::InternalServerError
-        }
-    })
+        })?;
+    // todo: rollback if this fails
+
+    Ok(account)
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -321,23 +336,73 @@ impl ToRedisArgs for OrderType {
 
 /// Submit an order for an equity asset.
 #[openapi(tag = "Accounts")]
-#[post("/accounts/<id>/assets/<asset_id>/<book>", data = "<form>")]
+#[post("/accounts/<account_id>/assets/<asset_id>/<book>", data = "<form>")]
 pub async fn submit_orders_for_account(
     _check: UserIdCheck,
-    id: Uuid,
+    account_id: Uuid,
     asset_id: i32,
     book: Book,
     mut orders: Connection<Orders>,
+    accounting: Connection<Accounting>,
     form: Json<CreateOrderForm>,
 ) -> Result<String, Status> {
     let order_id = Uuid(uuid::Uuid::now_v7());
+
+    let asset_account_id = uuid::Uuid::new_v5(&account_id.0, &asset_id.to_be_bytes()).as_u128();
+
+    // reserve funds/assets
+    // todo: how do you handle market buy orders??
+    match book {
+        Book::Bids => {
+            // they want to buy, so reserve funds
+            if let OrderType::Limit { price } = form.order_type {
+                // TODO: we should technically handle negative prices here...
+                accounting
+                    .create_transfers(vec![tb::Transfer::new(order_id.0.as_u128())
+                        .with_code(1)
+                        .with_amount(form.size as u128 * price as u128)
+                        .with_credit_account_id(account_id.0.as_u128())
+                        .with_debit_account_id(ADMIN_ACCOUNT_ID.0.as_u128())])
+                    .await
+                    .map_err(|e| {
+                        error!("error reserving funds: {e}");
+                        Status::InternalServerError
+                    })?;
+            }
+        }
+        Book::Offers => {
+            // they want to sell, so reserve units of the asset
+            accounting
+                .create_accounts(vec![tb::Account::new(asset_account_id, asset_id as u32, 1)
+                    .with_user_data_128(account_id.0.as_u128())
+                    .with_flags(tb::account::Flags::CREDITS_MUST_NOT_EXCEED_DEBITS)])
+                .await
+                .map_err(|e| {
+                    error!("error creating asset account: {e}");
+                    Status::InternalServerError
+                })?;
+            accounting
+                .create_transfers(vec![tb::Transfer::new(order_id.0.as_u128())
+                    .with_code(1)
+                    .with_amount(form.size as u128)
+                    .with_credit_account_id(asset_account_id)
+                    .with_debit_account_id(
+                        uuid::Uuid::new_v5(&ADMIN_ACCOUNT_ID.0, &asset_id.to_be_bytes()).as_u128(),
+                    )])
+                .await
+                .map_err(|e| {
+                    error!("error reserving assets for sell order: {e}");
+                    Status::InternalServerError
+                })?;
+        }
+    }
 
     redis::Script::new(include_str!("scripts/order.lua"))
         .prepare_invoke()
         .key(asset_id)
         .key(format!("{asset_id}_bids"))
         .key(format!("{asset_id}_offers"))
-        .key(id)
+        .key(account_id)
         .key(order_id)
         .arg(book)
         .arg(form.0)
@@ -423,7 +488,6 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
         Ok(form) => form,
     };
 
-    let id = Uuid(uuid::Uuid::max());
     let hash = match bcrypt::hash(form.password.expose_secret(), bcrypt::DEFAULT_COST)
         .map(SecretString::new)
         .map(Password)
@@ -441,13 +505,32 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
         return Err(rocket);
     };
 
+    let accounting = if let Some(accounting) = Accounting::fetch(&rocket) {
+        accounting
+    } else {
+        return Err(rocket);
+    };
+
+    if let Err(e) = accounting
+        .create_accounts(vec![tb::Account::new(
+            ADMIN_ACCOUNT_ID.0.as_u128(),
+            u32::MAX,
+            1,
+        )
+        .with_user_data_128(ADMIN_ACCOUNT_ID.0.as_u128())])
+        .await
+    {
+        error!("error setting up admin funds account: {e}");
+        return Err(rocket);
+    };
+
     let res = conn
         .run(move |c| {
             use super::schema::users::dsl;
 
             diesel::insert_into(dsl::users)
                 .values(User {
-                    id,
+                    id: ADMIN_ACCOUNT_ID,
                     email: form.email,
                     password: hash,
                     role_flags: Roles::ADMIN,

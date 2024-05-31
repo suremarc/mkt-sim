@@ -71,7 +71,7 @@ where
 #[derive(Debug, Clone, Serialize, Deserialize, FromSqlRow, AsExpression, Hash, Eq, PartialEq)]
 #[serde(transparent)]
 #[diesel(sql_type = Text)]
-pub struct Email(EmailAddress);
+pub struct Email(pub EmailAddress);
 
 impl JsonSchema for Email {
     fn schema_name() -> String {

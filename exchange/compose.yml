@@ -1,6 +1,7 @@
 services:
   tigerbeetle:
     image: ghcr.io/tigerbeetle/tigerbeetle:0.13.133
+    restart: always
     network_mode: service:exchange
     volumes: [ tigerbeetle:/data ]
     command: start --addresses=127.0.0.1:3000 /data/0_0.tigerbeetle
@@ -32,6 +33,7 @@ services:
 
   exchange:
     image: suremarc/mkt-sim-exchange
+    restart: always
     ports: [ 127.0.0.1:8000:8000 ]
     environment:
       - ROCKET_ADDRESS=0.0.0.0
