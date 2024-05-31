@@ -34,7 +34,12 @@ use schemars::{
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
-use tigerbeetle_unofficial as tb;
+use tigerbeetle_unofficial::{
+    self as tb,
+    error::{
+        CreateAccountError, CreateAccountErrorKind, CreateAccountsApiError, CreateAccountsError,
+    },
+};
 use tracing::error;
 
 use super::{
@@ -196,15 +201,20 @@ pub async fn register(
             }
         })?;
 
-    accounting
+    match accounting
         .create_accounts(vec![tb::Account::new(account_id.0.as_u128(), u32::MAX, 1)
             .with_user_data_128(account_id.0.as_u128())
             .with_flags(tb::account::Flags::CREDITS_MUST_NOT_EXCEED_DEBITS)])
         .await
-        .map_err(|e| {
+    {
+        Err(CreateAccountsError::Api(errs))
+            if matches!(errs.as_slice()[0].kind(), CreateAccountErrorKind::Exists) => {}
+        Ok(()) => {}
+        Err(e) => {
             error!("error creating funds account: {e}");
-            Status::InternalServerError
-        })?;
+            return Err(Status::InternalServerError);
+        }
+    }
     // todo: rollback if this fails
 
     Ok(account)
@@ -372,15 +382,20 @@ pub async fn submit_orders_for_account(
         }
         Book::Offers => {
             // they want to sell, so reserve units of the asset
-            accounting
+            match accounting
                 .create_accounts(vec![tb::Account::new(asset_account_id, asset_id as u32, 1)
                     .with_user_data_128(account_id.0.as_u128())
                     .with_flags(tb::account::Flags::CREDITS_MUST_NOT_EXCEED_DEBITS)])
                 .await
-                .map_err(|e| {
+            {
+                Err(CreateAccountsError::Api(errs))
+                    if matches!(errs.as_slice()[0].kind(), CreateAccountErrorKind::Exists) => {}
+                Ok(()) => {}
+                Err(e) => {
                     error!("error creating asset account: {e}");
-                    Status::InternalServerError
-                })?;
+                    return Err(Status::InternalServerError);
+                }
+            }
             accounting
                 .create_transfers(vec![tb::Transfer::new(order_id.0.as_u128())
                     .with_code(1)
@@ -511,7 +526,7 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
         return Err(rocket);
     };
 
-    if let Err(e) = accounting
+    match accounting
         .create_accounts(vec![tb::Account::new(
             ADMIN_ACCOUNT_ID.0.as_u128(),
             u32::MAX,
@@ -520,8 +535,13 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
         .with_user_data_128(ADMIN_ACCOUNT_ID.0.as_u128())])
         .await
     {
-        error!("error setting up admin funds account: {e}");
-        return Err(rocket);
+        Err(CreateAccountsError::Api(errs))
+            if matches!(errs.as_slice()[0].kind(), CreateAccountErrorKind::Exists) => {}
+        Ok(()) => {}
+        Err(e) => {
+            error!("error setting up admin funds account: {e:?}");
+            return Err(rocket);
+        }
     };
 
     let res = conn
