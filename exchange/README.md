@@ -29,7 +29,7 @@ docker compose up
 
 ## Testing it out
 
-A Swagger UI endpoint is available at `/swagger`. Otherwise, a raw OpenAPI spec is served at `/auth/openapi.json`, `/accounts/openapi.json`, and `assets/openapi.json`.
+A Swagger UI endpoint is available at `/swagger`. Otherwise, a raw OpenAPI spec is served at `/openapi.json`.
 
 ```bash
 # Get auth token
