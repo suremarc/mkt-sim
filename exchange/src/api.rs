@@ -46,6 +46,7 @@ pub fn rocket() -> Rocket<Build> {
                 accounts::get_equities_for_account,
                 accounts::submit_orders_for_account,
                 accounts::list_orders_for_account,
+                accounts::deposit_or_withdraw,
                 assets::create_equities,
                 assets::get_equity_by_id,
                 assets::get_equity_by_ticker,

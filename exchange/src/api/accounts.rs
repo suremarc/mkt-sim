@@ -367,12 +367,15 @@ pub async fn submit_orders_for_account(
                 // TODO: we should technically handle negative prices here...
                 accounting
                     .create_transfers(vec![tb::Transfer::new(order_id.0.as_u128())
+                        .with_code(1)
                         .with_amount(form.size as u128 * price as u128)
+                        .with_ledger(u32::MAX)
                         .with_credit_account_id(account_id.0.as_u128())
-                        .with_debit_account_id(ADMIN_ACCOUNT_ID.0.as_u128())])
+                        .with_debit_account_id(ADMIN_ACCOUNT_ID.0.as_u128())
+                        .with_flags(tb::transfer::Flags::PENDING)])
                     .await
                     .map_err(|e| {
-                        error!("error reserving funds: {e}");
+                        error!("error reserving funds: {e:?}");
                         Status::InternalServerError
                     })?;
             }
@@ -390,7 +393,7 @@ pub async fn submit_orders_for_account(
                     if matches!(errs.as_slice()[0].kind(), CreateAccountErrorKind::Exists) => {}
                 Ok(()) => {}
                 Err(e) => {
-                    error!("error creating asset account: {e}");
+                    error!("error creating asset account: {e:?}");
                     return Err(Status::InternalServerError);
                 }
             }
@@ -398,10 +401,12 @@ pub async fn submit_orders_for_account(
                 .create_transfers(vec![tb::Transfer::new(order_id.0.as_u128())
                     .with_code(1)
                     .with_amount(form.size as u128)
+                    .with_ledger(asset_id as u32)
                     .with_credit_account_id(asset_account_id)
                     .with_debit_account_id(
                         uuid::Uuid::new_v5(&ADMIN_ACCOUNT_ID.0, &asset_id.to_be_bytes()).as_u128(),
-                    )])
+                    )
+                    .with_flags(tb::transfer::Flags::PENDING)])
                 .await
                 .map_err(|e| {
                     error!("error reserving assets for sell order: {e}");
@@ -410,7 +415,7 @@ pub async fn submit_orders_for_account(
         }
     }
 
-    redis::Script::new(include_str!("scripts/order.lua"))
+    let shares_filled: i32 = redis::Script::new(include_str!("scripts/order.lua"))
         .prepare_invoke()
         .key(asset_id)
         .key(format!("{asset_id}_bids"))
@@ -421,11 +426,12 @@ pub async fn submit_orders_for_account(
         .arg(form.0)
         .invoke_async(orders.as_mut())
         .await
-        .map(|v: i32| format!("{v}"))
         .map_err(|e| {
             error!("error submitting order: {e}");
             Status::InternalServerError
-        })
+        })?;
+
+    Ok(format!("{shares_filled}"))
 }
 
 #[openapi(tag = "Accounts")]
@@ -459,6 +465,49 @@ pub async fn list_orders_for_account(
             error!("error listing orders: {e}");
             Status::InternalServerError
         })
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(rename_all = "snake_case")]
+pub enum BalanceTxType {
+    Deposit,
+    Withdraw,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+pub struct BalanceForm {
+    pub amount: u128,
+    pub r#type: BalanceTxType,
+}
+
+#[openapi(tag = "Accounts")]
+#[post("/accounts/<id>/balance", data = "<form>")]
+pub async fn deposit_or_withdraw(
+    _check: UserIdCheck,
+    id: Uuid,
+    form: Json<BalanceForm>,
+    accounting: Connection<Accounting>,
+) -> Result<(), Status> {
+    let (debit, credit) = match form.r#type {
+        BalanceTxType::Deposit => (id.0.as_u128(), ADMIN_ACCOUNT_ID.0.as_u128()),
+        BalanceTxType::Withdraw => (ADMIN_ACCOUNT_ID.0.as_u128(), id.0.as_u128()),
+    };
+
+    accounting
+        .create_transfers(vec![tb::Transfer::new(uuid::Uuid::now_v7().as_u128())
+            .with_code(1)
+            .with_amount(form.amount)
+            .with_ledger(u32::MAX)
+            .with_debit_account_id(debit)
+            .with_credit_account_id(credit)])
+        .await
+        .map_err(|e| {
+            error!("error depositing/withdrawing: {e:?}");
+            Status::BadRequest
+        })?;
+
+    Ok(())
 }
 
 #[allow(unused)]
