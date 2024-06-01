@@ -12,10 +12,10 @@ setup:
 install-diesel:
     FROM +setup
     DO rust+CARGO --args="install diesel_cli --no-default-features --features=sqlite"
-    SAVE ARTIFACT /usr/local/cargo/bin/diesel
+    SAVE ARTIFACT /usr/local/cargo/bin/diesel /diesel
 
 copy-src:
-    FROM +install-diesel
+    FROM +setup
     WORKDIR /tmp/exchange
     COPY --keep-ts --dir Cargo.toml Cargo.lock src migrations diesel.toml ./
 
@@ -27,6 +27,7 @@ copy-src:
 
 diesel-setup:
     FROM +copy-src
+    COPY +install-diesel/diesel /usr/local/bin/diesel
     ARG DATABASE_PATH=data.db
     ENV DATABASE_URL=sqlite://$DATABASE_PATH
     RUN diesel migration run
@@ -58,13 +59,13 @@ lint:
 docker:
     FROM debian:bookworm
     WORKDIR /opt/exchange
-    RUN apt-get -y update && apt-get -y install libsqlite3-dev
+    RUN apt-get -y update && apt-get -y install ca-certificates fuse3 sqlite3 libsqlite3-dev yq
+
+    COPY +litefs/litefs /usr/local/bin/litefs
+    COPY litefs.yml /etc/litefs.yml
 
     ARG TARGET=debug
     COPY +build-$TARGET/$TARGET/exchange ./bin/
-
-    # Install diesel so we can do migrations if need be
-    COPY +install-diesel/diesel /usr/local/bin
 
     ENTRYPOINT ["/opt/exchange/bin/exchange"]
     CMD ["api"]
