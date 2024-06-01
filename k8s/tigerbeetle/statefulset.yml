@@ -14,6 +14,22 @@ spec:
   selector: 
     app: tigerbeetle
 ---
+# non-headless version
+apiVersion: v1
+kind: Service
+metadata:
+  name: tigerbeetle
+  namespace: tigerbeetle
+  labels:
+    app: tigerbeetle
+spec:
+  ports:
+    - port: 3000
+      targetPort: 4242
+      protocol: TCP
+  selector: 
+    app: tigerbeetle
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
