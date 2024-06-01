@@ -1,4 +1,4 @@
-name: CICD
+name: CI/CD
 on: 
   push:
     branches: [ master ]
@@ -59,3 +59,20 @@ jobs:
         clusterName: mkt-sim
     - name: Deploy TigerBeetle
       run: kubectl apply --server-side --force-conflicts --field-manager gh-actions -f tigerbeetle
+    - name: Create Exchange Config
+      run: >-
+        kubectl create configmap exchange-config
+          --from-file=Rocket.toml=../exchange/Rocket.toml
+          --from-file=litefs.yml=../exchange/litefs.yml
+          --server-side
+          --force-conflicts
+          --field-manager gh-actions
+    - name: Use GH hash
+      uses: fjogeleit/yaml-update-action@v0.9.0
+      with:
+        valueFile: exchange/deployment.yml
+        propertyPath: spec.template.spec.containers[0].image
+        value: ${{ github.sha }}
+        commitChange: false
+    - name: Deploy Exchange
+      run: kubectl apply --server-side --force-conflicts --field-manager gh-actions -f exchange

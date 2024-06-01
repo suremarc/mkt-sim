@@ -62,7 +62,6 @@ docker:
     RUN apt-get -y update && apt-get -y install ca-certificates fuse3 sqlite3 libsqlite3-dev yq
 
     COPY +litefs/litefs /usr/local/bin/litefs
-    COPY litefs.yml /etc/litefs.yml
 
     ARG TARGET=debug
     COPY +build-$TARGET/$TARGET/exchange ./bin/
