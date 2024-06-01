@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tigerbeetle-nginx-proxy
+  namespace: tigerbeetle
+  labels: 
+    app: tigerbeetle
+data:
+  # property-like keys; each key maps to a simple value
+  nginx-prestart.sh: |
+    #!/bin/sh
+    set -ex; 
+    DNS_SERVER=$(cat /etc/resolv.conf |grep -i '^nameserver'|head -n1|cut -d ' ' -f2)
+    echo $DNS_SERVER
+    config=$(cat << EOF
+    events {}
+    stream {
+        server {
+            listen 3000;
+            resolver $DNS_SERVER;
+            set \$backend tigerbeetle-0.tigerbeetle-headless.tigerbeetle.svc.cluster.local:4242;
+            proxy_pass \$backend;
+        }
+
+        server {
+            listen 3001;
+            resolver $DNS_SERVER;
+            set \$backend tigerbeetle-1.tigerbeetle-headless.tigerbeetle.svc.cluster.local:4242;
+            proxy_pass \$backend;
+        }
+
+        server {
+            listen 3002;
+            resolver $DNS_SERVER;
+            set \$backend tigerbeetle-2.tigerbeetle-headless.tigerbeetle.svc.cluster.local:4242;
+            proxy_pass \$backend;
+        }
+    }
+    EOF
+    )
+    echo $config
+    echo $config > /etc/nginx/nginx.conf 

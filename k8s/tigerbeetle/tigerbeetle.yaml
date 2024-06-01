@@ -1,0 +1,122 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tigerbeetle-headless
+  namespace: tigerbeetle
+  labels:
+    app: tigerbeetle
+spec:
+  clusterIP: None
+  ports:
+    - port: 3000
+      targetPort: 4242
+      protocol: TCP
+  selector: 
+    app: tigerbeetle
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tigerbeetle
+  namespace: tigerbeetle
+  labels:
+    app: tigerbeetle
+spec:
+  serviceName: tigerbeetle-headless
+  replicas: 3
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: tigerbeetle
+  template:
+    metadata:
+      labels:
+        app: tigerbeetle
+    spec:
+      initContainers:
+      - name: tigerbeetle-format
+        image: ghcr.io/tigerbeetle/tigerbeetle:0.13.133
+        command: [ /bin/sh, -c ]
+        args: 
+        - |
+          set -ex
+          REPLICA=${REPLICA_NAME##*-}
+          if [ ! -f /var/lib/tigerbeetle/data_$REPLICA.tigerbeetle ]; then 
+            ./tigerbeetle format --cluster=0 --replica=$REPLICA --replica-count=3 /var/lib/tigerbeetle/data_$REPLICA.tigerbeetle;
+          fi
+        env:
+        - name: REPLICA_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        volumeMounts:
+        - name: tb-data
+          mountPath: /var/lib/tigerbeetle
+      containers:
+      - name: tigerbeetle
+        image: ghcr.io/tigerbeetle/tigerbeetle:0.13.133
+        ports:
+        - containerPort: 4242
+          protocol: TCP
+        command: [ /bin/sh, -c ]
+        args: 
+        - |
+          set -ex; 
+          REPLICA=${REPLICA_NAME##*-}
+          ADDRESSES=""
+          for n in $(seq 0 2); do
+            if [ "$n" != "$REPLICA" ]; then 
+              ADDRESSES="$ADDRESSES,127.0.0.1:300$n"
+            else
+              ADDRESSES="$ADDRESSES,0.0.0.0:4242"
+            fi
+          done
+          ADDRESSES=${ADDRESSES#?}
+          ./tigerbeetle start --addresses=$ADDRESSES /var/lib/tigerbeetle/data_$REPLICA.tigerbeetle
+        env:
+        - name: REPLICA_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          limits:
+            cpu: "1"
+            memory: 24Gi
+        volumeMounts:
+        - name: tb-data
+          mountPath: /var/lib/tigerbeetle
+      - name: tigerbeetle-nginx-proxy
+        image: nginx:1.23.1
+        resources:
+          limits:
+            cpu: "0.2"
+            memory: 128Mi
+        volumeMounts:
+          - name: tigerbeetle-nginx-startup-scripts
+            mountPath: /docker-entrypoint.d/nginx-prestart.sh
+            # using subPath here to mount the single file is necessary for the mounted file to have the correct filetype to be noticed by the nginx startup script.
+            subPath: nginx-prestart.sh
+      volumes:
+        - name: tb-data
+          hostPath:
+            path: /var/lib/tigerbeetle
+            type: DirectoryOrCreate
+        - name: tigerbeetle-nginx-startup-scripts
+          configMap:
+            name: tigerbeetle-nginx-proxy
+            defaultMode: 0555
+            items:
+              - key: nginx-prestart.sh
+                path: nginx-prestart.sh
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - tigerbeetle
+            namespaces:
+            - tigerbeetle
