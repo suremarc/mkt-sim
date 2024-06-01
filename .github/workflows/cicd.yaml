@@ -42,3 +42,20 @@ jobs:
         password: ${{ secrets.DOCKERHUB_TOKEN }}
     - name: Build and push
       run: earthly --push +docker --TARGET=release
+
+  deploy:
+    runs-on: ubuntu-22.04
+    environment: development
+    needs: [ exchange-docker ]
+    defaults:
+      run:
+        working-directory: k8s
+    steps:
+    - uses: actions/checkout@v4
+    - name: DigitalOcean Kubernetes
+      uses: matootie/dokube@v1.4.1
+      with:
+        personalAccessToken: ${{ secrets.DIGITALOCEAN_TOKEN }}
+        clusterName: mkt-sim
+    - name: Deploy TigerBeetle
+      run: kubectl apply --server-side --force-conflicts --field-manager gh-actions -f tigerbeetle
