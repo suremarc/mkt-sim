@@ -60,7 +60,9 @@ jobs:
       run: >-
         kubectl create configmap exchange-config
           --from-file=Rocket.toml=exchange/Rocket.toml
-          --from-file=litefs.yml=exchange/litefs.yml
+          --from-file=litefs.yml=exchange/litefs.yml 
+          --dry-run -o yaml |
+          kubectl apply -f -
           --server-side
           --force-conflicts
           --field-manager gh-actions
