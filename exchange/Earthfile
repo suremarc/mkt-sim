@@ -72,3 +72,7 @@ docker:
 
     ARG EARTHLY_GIT_HASH
     SAVE IMAGE --push suremarc/mkt-sim-exchange suremarc/mkt-sim-exchange:$EARTHLY_GIT_HASH
+
+litefs:
+    FROM flyio/litefs:0.5
+    SAVE ARTIFACT /usr/local/bin/litefs /litefs
