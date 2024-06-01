@@ -27,6 +27,9 @@ jobs:
   exchange-docker:
     runs-on: self-hosted
     needs: [ exchange ]
+    defaults:
+      run:
+        working-directory: exchange
     steps:
     - uses: earthly/actions-setup@v1
       with: 
