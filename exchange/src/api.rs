@@ -136,6 +136,8 @@ async fn migrate(rocket: Rocket<Build>) -> fairing::Result {
         Some(conn) => conn,
     };
 
+    tracing::info!("got meta cxn");
+
     if let Err(e) = meta
         .run(|c| {
             c.run_pending_migrations(MIGRATIONS)?;
@@ -146,6 +148,8 @@ async fn migrate(rocket: Rocket<Build>) -> fairing::Result {
         error!("error performing migrations: {e}");
         return Err(rocket);
     };
+
+    tracing::info!("finished diesel migrations");
 
     accounts::create_admin_user(rocket).await
 }

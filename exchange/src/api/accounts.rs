@@ -621,6 +621,9 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
             error!("error setting up admin account: {e}");
             Err(rocket)
         }
-        Ok(_) => Ok(rocket),
+        Ok(_) => {
+            tracing::info!("finished setting up admin account");
+            Ok(rocket)
+        }
     }
 }
