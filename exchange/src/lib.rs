@@ -149,10 +149,10 @@ fn establish_connection(config: &str) -> BoxFuture<ConnectionResult<AsyncPgConne
 
 fn root_certs() -> rustls::RootCertStore {
     let mut roots = rustls::RootCertStore::empty();
-    let mut certs = rustls_native_certs::load_native_certs().expect("Certs not loadable!");
-    certs.push(CertificateDer::from(
-        include_bytes!("ca-certificate.crt").as_slice(),
-    ));
+    let certs = rustls_native_certs::load_native_certs().expect("Certs not loadable!");
     roots.add_parsable_certificates(certs);
+    roots.add_parsable_certificates(Some(CertificateDer::from(
+        include_bytes!("ca-certificate.crt").as_slice(),
+    )));
     roots
 }
