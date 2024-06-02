@@ -1,10 +1,4 @@
-use std::{
-    ops::Deref,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-};
+use std::{ops::Deref, sync::Arc};
 
 use figment::Figment;
 use hickory_resolver::{error::ResolveError, TokioAsyncResolver};
