@@ -60,7 +60,23 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /etc/config
+        - name: litefs
+          mountPath: /var/lib/litefs
       volumes:
       - name: config
         configMap:
           name: api-config
+      - name: litefs
+        persistentVolumeClaim: 
+          claimName: litefs-claim
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: litefs-claim
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
