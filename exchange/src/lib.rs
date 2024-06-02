@@ -1,9 +1,18 @@
-use std::{ops::Deref, sync::Arc};
+use std::{ops::Deref, sync::Arc, time::Duration};
 
+use deadpool::Runtime;
+use diesel::{ConnectionError, ConnectionResult};
 use figment::Figment;
 use hickory_resolver::{error::ResolveError, TokioAsyncResolver};
 use itertools::Itertools;
-use rocket_db_pools::{Database, Pool};
+use rocket::futures::{future::BoxFuture, FutureExt};
+use rocket_db_pools::{
+    diesel::{
+        pooled_connection::{AsyncDieselConnectionManager, ManagerConfig},
+        AsyncPgConnection,
+    },
+    Config, Database, Pool,
+};
 use tigerbeetle_unofficial as tb;
 
 pub mod api;
@@ -20,6 +29,41 @@ pub struct Orders(pub rocket_db_pools::deadpool_redis::Pool);
 #[derive(Database)]
 #[database("accounting")]
 pub struct Accounting(pub AccountingPool);
+
+pub struct PgPool(pub rocket_db_pools::diesel::PgPool);
+
+#[async_trait::async_trait]
+impl Pool for PgPool {
+    type Connection = <rocket_db_pools::diesel::PgPool as Pool>::Connection;
+
+    type Error = <rocket_db_pools::diesel::PgPool as Pool>::Error;
+
+    async fn init(figment: &Figment) -> Result<Self, Self::Error> {
+        let config: Config = figment.extract()?;
+        let mut manager_config = ManagerConfig::default();
+        manager_config.custom_setup = Box::new(establish_connection);
+        let manager =
+            AsyncDieselConnectionManager::new_with_config(config.url.as_str(), manager_config);
+
+        deadpool::managed::Pool::builder(manager)
+            .max_size(config.max_connections)
+            .wait_timeout(Some(Duration::from_secs(config.connect_timeout)))
+            .create_timeout(Some(Duration::from_secs(config.connect_timeout)))
+            .recycle_timeout(config.idle_timeout.map(Duration::from_secs))
+            .runtime(Runtime::Tokio1)
+            .build()
+            .map(Self)
+            .map_err(rocket_db_pools::Error::Init)
+    }
+
+    async fn get(&self) -> Result<Self::Connection, Self::Error> {
+        <rocket_db_pools::diesel::PgPool as Pool>::get(&self.0).await
+    }
+
+    async fn close(&self) {
+        self.0.close()
+    }
+}
 
 #[derive(Clone)]
 pub struct AccountingPool(Arc<tb::Client>);
@@ -79,4 +123,32 @@ impl Pool for AccountingPool {
     }
 
     async fn close(&self) {}
+}
+
+fn establish_connection(config: &str) -> BoxFuture<ConnectionResult<AsyncPgConnection>> {
+    let fut = async {
+        // We first set up the way we want rustls to work.
+        let rustls_config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_certs())
+            .with_no_client_auth();
+        let tls = tokio_postgres_rustls::MakeRustlsConnect::new(rustls_config);
+        let (client, conn) = tokio_postgres::connect(config, tls)
+            .await
+            .map_err(|e| ConnectionError::BadConnection(e.to_string()))?;
+        tokio::spawn(async move {
+            if let Err(e) = conn.await {
+                eprintln!("Database connection: {e}");
+            }
+        });
+        AsyncPgConnection::try_from(client).await
+    };
+
+    fut.boxed()
+}
+
+fn root_certs() -> rustls::RootCertStore {
+    let mut roots = rustls::RootCertStore::empty();
+    let certs = rustls_native_certs::load_native_certs().expect("Certs not loadable!");
+    roots.add_parsable_certificates(certs);
+    roots
 }
