@@ -43,14 +43,6 @@ pub struct AccountingPool {
     counter: Arc<AtomicUsize>,
 }
 
-// impl Deref for AccountingPool {
-//     type Target = [tb::Client];
-
-//     fn deref(&self) -> &[tb::Client] {
-//         self.0.deref()
-//     }
-// }
-
 #[derive(Debug, thiserror::Error)]
 pub enum AccountingError {
     #[error("couldn't read TigerBeetle config: {0}")]
@@ -88,6 +80,8 @@ impl Pool for AccountingPool {
                     .map_err(AccountingError::Connect)
             })
             .collect::<Result<Vec<_>, AccountingError>>()?;
+
+        tracing::info!("got tigerbeetle cxns");
 
         Ok(AccountingPool {
             clients,
