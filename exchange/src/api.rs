@@ -31,7 +31,7 @@ pub const ADMIN_ACCOUNT_ID: Uuid = Uuid(uuid::Uuid::from_bytes([
 ]));
 
 pub fn rocket() -> Rocket<Build> {
-    rocket::build()
+    let rocket = rocket::build()
         .attach(MetaConn::fairing())
         .attach(Accounting::init())
         .attach(Orders::init())
@@ -63,7 +63,9 @@ pub fn rocket() -> Rocket<Build> {
                 urls: vec![UrlObject::new("API", "../openapi.json")],
                 ..Default::default()
             }),
-        )
+        );
+    tracing::info!("{:?}", rocket.figment());
+    rocket
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
