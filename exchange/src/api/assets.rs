@@ -15,11 +15,7 @@ use diesel::{
 use redis::FromRedisValue;
 use rocket::{get, http::Status, post, serde::json::Json};
 use rocket_db_pools::{
-    diesel::{
-        prelude::{QueryDsl, RunQueryDsl},
-        scoped_futures::ScopedFutureExt,
-        AsyncConnection,
-    },
+    diesel::prelude::{QueryDsl, RunQueryDsl},
     Connection,
 };
 use rocket_okapi::openapi;
@@ -158,24 +154,12 @@ pub async fn create_equities(
     mut conn: Connection<Meta>,
     form: Json<List<CreateEquityForm>>,
 ) -> Result<Json<List<Equity>>, Status> {
-    conn.transaction::<_, diesel::result::Error, _>(|mut conn| {
-        async move {
-            use super::schema::equities::dsl::*;
-
-            let n = form.items.len();
-            diesel::insert_into(equities)
-                .values(form.0.items)
-                .execute(&mut conn)
-                .await?;
-            equities
-                .order(id.desc())
-                .limit(n as i64)
-                .order(id.asc())
-                .get_results(&mut conn)
-                .await
-        }
-        .scope_boxed()
-    })
+    {
+        use super::schema::equities::dsl::*;
+        diesel::insert_into(equities)
+            .values(form.0.items)
+            .get_results(&mut conn)
+    }
     .await
     .map(List::from)
     .map(Json)
@@ -213,23 +197,12 @@ pub async fn create_equity_options(
     mut conn: Connection<Meta>,
     form: Json<List<CreateEquityOptionItem>>,
 ) -> Result<Json<List<EquityOption>>, Status> {
-    conn.transaction::<_, diesel::result::Error, _>(|mut conn| {
-        async move {
-            let n = form.items.len();
-            use super::schema::equity_options::dsl::*;
-            diesel::insert_into(equity_options)
-                .values(&form.items)
-                .execute(&mut conn)
-                .await?;
-            equity_options
-                .order(id.desc())
-                .limit(n as i64)
-                .order(id.asc())
-                .get_results(&mut conn)
-                .await
-        }
-        .scope_boxed()
-    })
+    {
+        use super::schema::equity_options::dsl::*;
+        diesel::insert_into(equity_options)
+            .values(&form.items)
+            .get_results(&mut conn)
+    }
     .await
     .map(List::from)
     .map(Json)
