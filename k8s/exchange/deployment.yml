@@ -29,10 +29,11 @@ spec:
         - name: ROCKET_CONFIG
           value: /etc/config/Rocket.toml
         - name: ROCKET_ADMIN_EMAIL
-          valueFrom:
-            secretKeyRef:
-              name: admin
-              key: email
+          value: ""
+          # valueFrom:
+          #   secretKeyRef:
+          #     name: admin
+          #     key: email
         - name: ROCKET_ADMIN_PASSWORD
           value: ""
           # valueFrom:
