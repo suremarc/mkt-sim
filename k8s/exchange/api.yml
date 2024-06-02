@@ -132,6 +132,7 @@ apiVersion: autoscaling/v1
 kind: HorizontalPodAutoscaler
 metadata:
   name: exchange-api
+  namespace: exchange
 spec:
   maxReplicas: 9
   minReplicas: 3
