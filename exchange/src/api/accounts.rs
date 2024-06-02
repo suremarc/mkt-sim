@@ -42,7 +42,7 @@ use tigerbeetle_unofficial::{
 use tracing::error;
 
 use super::{
-    auth::{AdminCheck, AuthnClaim, RoleCheck, UserCheck},
+    auth::{AdminCheck, AuthnClaim, UserCheck},
     schema::users::dsl,
     types::{Email, Password},
     CursorList, ADMIN_ACCOUNT_ID,
