@@ -14,6 +14,7 @@ diesel_migrations = { version = "2.1.0", features = ["sqlite"] }
 email_address = "0.2.4"
 figment = { version = "0.10.19", features = ["toml"] }
 fixed = { version = "1.27.0", features = ["serde-str"] }
+hickory-resolver = "0.24.1"
 itertools = "0.13.0"
 jsonwebtoken = "9.3.0"
 redis = { version = "=0.23.3", features = ["tokio-native-tls-comp"] }

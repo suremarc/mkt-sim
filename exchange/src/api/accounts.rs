@@ -21,7 +21,7 @@ use rocket::{
     serde::json::Json,
     Build, Request, Rocket,
 };
-use rocket_db_pools::{deadpool_redis::redis, Connection, Database};
+use rocket_db_pools::{deadpool_redis::redis, Connection, Database, Pool};
 use rocket_okapi::{
     gen::OpenApiGenerator,
     openapi,
@@ -572,8 +572,15 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
     } else {
         return Err(rocket);
     };
+    let accounting_conn = match accounting.get().await {
+        Err(e) => {
+            error!("error getting accounting cxn: {e}");
+            return Err(rocket);
+        }
+        Ok(conn) => conn,
+    };
 
-    match accounting
+    match accounting_conn
         .create_accounts(vec![tb::Account::new(
             ADMIN_ACCOUNT_ID.0.as_u128(),
             u32::MAX,
