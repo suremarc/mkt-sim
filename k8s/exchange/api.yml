@@ -58,31 +58,24 @@ spec:
         env:
         - name: ROCKET_CONFIG
           value: /etc/config/Rocket.toml
-        - name: ROCKET_ADMIN_EMAIL
-          value: ""
-          # valueFrom:
-          #   secretKeyRef:
-          #     name: admin
-          #     key: email
-        - name: ROCKET_ADMIN_PASSWORD
-          value: ""
-          # valueFrom:
-          #   secretKeyRef:
-          #     name: admin
-          #     key: password
-        - name: ROCKET_DATABASES_ORDERS_URL
-          value: ""
-          # valueFrom:
-          #   secretKeyRef:
-          #     name: redis
-          #     key: uri
-        - name: ROCKET_DATABASES_META_URL
+        - name: ROCKET_ADMIN.EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: admin
+              key: email
+        - name: ROCKET_ADMIN.PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: admin
+              key: password
+        - name: ROCKET_DATABASES.ORDERS.URL
+          valueFrom:
+            secretKeyRef:
+              name: redis
+              key: uri
+        - name: ROCKET_DATABASES.META.URL
           value: /litefs/my.db
         # todo: figure out how to link tigerbeetle
-        - name: POD_IP
-          valueFrom:
-            fieldRef:
-              fieldPath: status.podIP
         resources:
           limits:
             cpu: "1"
