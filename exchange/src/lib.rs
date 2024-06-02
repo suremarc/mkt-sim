@@ -151,8 +151,10 @@ fn root_certs() -> rustls::RootCertStore {
     let mut roots = rustls::RootCertStore::empty();
     let certs = rustls_native_certs::load_native_certs().expect("Certs not loadable!");
     roots.add_parsable_certificates(certs);
-    roots.add_parsable_certificates(Some(CertificateDer::from(
-        include_bytes!("ca-certificate.crt").as_slice(),
-    )));
+    roots
+        .add(CertificateDer::from(
+            include_bytes!("ca-certificate.crt").as_slice(),
+        ))
+        .unwrap();
     roots
 }
