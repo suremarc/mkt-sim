@@ -61,7 +61,7 @@ jobs:
       run: >-
         kubectl -n exchange --dry-run=client -o yaml \
           create configmap api-config \
-          --from-file=Rocket.toml=exchange/Rocket.toml \
+          --from-file=Rocket.toml=exchange/Rocket.toml | \
           kubectl apply -f - \
           --server-side \
           --force-conflicts \

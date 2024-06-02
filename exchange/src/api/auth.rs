@@ -40,8 +40,10 @@ pub struct LoginForm {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct AuthnClaim {
-    pub account_id: uuid::Uuid,
+    pub sub: uuid::Uuid,
     pub exp: u64,
+
+    pub roles: Roles,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -87,8 +89,9 @@ pub async fn login(
     }
 
     let claim = AuthnClaim {
-        account_id: user.id,
+        sub: user.id,
         exp: (chrono::offset::Utc::now() + chrono::Days::new(7)).timestamp() as u64,
+        roles: user.role_flags,
     };
 
     jwt::encode(
@@ -213,34 +216,7 @@ impl<'r, const FLAGS: i64> FromRequest<'r> for RoleCheck<FLAGS> {
         let required_roles = Roles::from_bits_truncate(FLAGS);
         let claim = try_outcome!(req.guard::<AuthnClaim>().await);
 
-        // If the required roles is empty, we don't need to do a DB lookup.
-        // As long as the authn claim is validated, we don't need to do any checks
-        if required_roles.is_empty() {
-            return Outcome::Success(Self(claim));
-        }
-
-        let mut conn = try_outcome!(Connection::<Meta>::from_request(req).await.map_error(
-            |(status, pool_err)| {
-                if let Some(e) = pool_err {
-                    error!("pool error: {e}");
-                }
-
-                (status, ())
-            }
-        ));
-
-        let roles: Roles = try_outcome!({
-            use super::schema::users::dsl::*;
-            users
-                .find(claim.account_id)
-                .select(role_flags)
-                .get_result(&mut conn)
-                .await
-        }
-        .map_err(|e| error!("error fetching user roles for '{}': {e}", claim.account_id))
-        .or_error(Status::InternalServerError));
-
-        if !roles.contains(required_roles) {
+        if !claim.roles.contains(required_roles) {
             Outcome::Error((Status::Unauthorized, ()))
         } else {
             Outcome::Success(Self(claim))
