@@ -81,6 +81,11 @@ spec:
         env:
         - name: ROCKET_CONFIG
           value: /etc/config/Rocket.toml
+        - name: ROCKET_JWT.SECRET
+          valueFrom:
+            secretKeyRef:
+              name: jwt
+              key: key
         - name: ROCKET_ADMIN.EMAIL
           valueFrom:
             secretKeyRef:
