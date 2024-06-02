@@ -153,7 +153,9 @@ fn root_certs() -> rustls::RootCertStore {
     roots.add_parsable_certificates(certs);
     roots
         .add(CertificateDer::from(
-            include_bytes!("ca-certificate.crt").as_slice(),
+            pem::parse(include_bytes!("ca-certificate.crt").as_slice())
+                .expect("expected valid cert in pem form")
+                .contents(),
         ))
         .unwrap();
     roots

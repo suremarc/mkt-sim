@@ -885,6 +885,7 @@ dependencies = [
  "hickory-resolver",
  "itertools 0.13.0",
  "jsonwebtoken",
+ "pem",
  "redis 0.23.3",
  "redis-derive",
  "rocket",
