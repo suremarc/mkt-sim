@@ -8,9 +8,11 @@ metadata:
 spec:
   clusterIP: None
   ports:
-    - port: 8080
+    - name: api
+      port: 8080
       protocol: TCP
-    - port: 20202
+    - name: litefs
+      port: 20202
       protocol: TCP
   selector: 
     app: exchange
@@ -49,8 +51,10 @@ spec:
         - -config
         - /etc/config/litefs.yml
         ports:
-        - name: http
+        - name: api
           containerPort: 8080
+        - name: litefs
+          containerPort: 20202
         env:
         - name: ROCKET_CONFIG
           value: /etc/config/Rocket.toml
