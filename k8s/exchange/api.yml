@@ -77,7 +77,7 @@ spec:
               name: postgresql
               key: uri
         - name: ROCKET_DATABASES.ACCOUNTING.URL
-          value: tigerbeetle-headless.tigerbeetle:4242=
+          value: tigerbeetle-headless.tigerbeetle:4242
         resources:
           limits:
             cpu: "1"
