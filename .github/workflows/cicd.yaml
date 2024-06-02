@@ -68,7 +68,7 @@ jobs:
           --force-conflicts \
           --field-manager gh-actions
     - name: Use GH hash
-      uses: fjogeleit/yaml-update-action@451fb54
+      uses: fjogeleit/yaml-update-action@451fb54614e46f952fc18ffd99e8c93b7b13f85e
       with:
         valueFile: k8s/exchange/deployment.yml
         propertyPath: "[0].spec.template.spec.containers[0].image"
