@@ -16,7 +16,7 @@ figment = { version = "0.10.19", features = ["toml"] }
 fixed = { version = "1.27.0", features = ["serde-str"] }
 itertools = "0.13.0"
 jsonwebtoken = "9.3.0"
-redis = "=0.23.3"
+redis = { version = "=0.23.3", features = ["tokio-native-tls-comp"] }
 redis-derive = "0.1.7"
 rocket = { version = "0.5.0", features = ["json", "uuid"] }
 rocket_db_pools = { version = "0.1.0", features = ["deadpool_redis"] }
