@@ -13,6 +13,7 @@ use rocket_db_pools::{
     },
     Config, Database, Pool,
 };
+use rustls::pki_types::CertificateDer;
 use tigerbeetle_unofficial as tb;
 
 pub mod api;
@@ -148,7 +149,10 @@ fn establish_connection(config: &str) -> BoxFuture<ConnectionResult<AsyncPgConne
 
 fn root_certs() -> rustls::RootCertStore {
     let mut roots = rustls::RootCertStore::empty();
-    let certs = rustls_native_certs::load_native_certs().expect("Certs not loadable!");
+    let mut certs = rustls_native_certs::load_native_certs().expect("Certs not loadable!");
+    certs.push(CertificateDer::from(
+        include_bytes!("ca-certificate.crt").as_slice(),
+    ));
     roots.add_parsable_certificates(certs);
     roots
 }
