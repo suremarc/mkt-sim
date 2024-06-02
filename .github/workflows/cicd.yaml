@@ -54,15 +54,15 @@ jobs:
       with:
         personalAccessToken: ${{ secrets.DIGITALOCEAN_TOKEN }}
         clusterName: mkt-sim
+        version: "1.30.1"
     - name: Deploy TigerBeetle
       run: kubectl apply --server-side --force-conflicts --field-manager gh-actions -f k8s/tigerbeetle
     - name: Create Exchange Config
       run: >-
-        kubectl -n exchange create configmap 
-          --dry-run=client -o yaml
-          exchange-config
+        kubectl -n exchange create configmap exchange-config
           --from-file=Rocket.toml=exchange/Rocket.toml
-          --from-file=litefs.yml=exchange/litefs.yml |
+          --from-file=litefs.yml=exchange/litefs.yml 
+          --dry-run=client -o yaml |
           kubectl apply -f -
           --server-side
           --force-conflicts
