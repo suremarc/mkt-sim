@@ -573,6 +573,7 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
     } else {
         return Err(rocket);
     };
+
     let accounting_conn = match accounting.get().await {
         Err(e) => {
             error!("error getting accounting cxn: {e}");

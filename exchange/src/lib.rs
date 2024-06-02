@@ -1,6 +1,9 @@
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
+use std::{
+    ops::Deref,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use figment::Figment;
@@ -38,9 +41,14 @@ pub struct Orders(pub rocket_db_pools::deadpool_redis::Pool);
 pub struct Accounting(pub AccountingPool);
 
 #[derive(Clone)]
-pub struct AccountingPool {
-    clients: Vec<Arc<tb::Client>>,
-    counter: Arc<AtomicUsize>,
+pub struct AccountingPool(Arc<tb::Client>);
+
+impl Deref for AccountingPool {
+    type Target = tb::Client;
+
+    fn deref(&self) -> &tb::Client {
+        self.0.as_ref()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -68,31 +76,25 @@ impl Pool for AccountingPool {
             TokioAsyncResolver::tokio_from_system_conf().map_err(AccountingError::Resolve)?;
 
         let (domain, port) = config.url.split_once(':').ok_or(AccountingError::NoPort)?;
+
         // todo: try to implement dns re-resolution
-        let clients = resolver
+        resolver
             .ipv4_lookup(domain)
             .await
             .map_err(AccountingError::Resolve)?
             .iter()
+            .next()
             .map(|ip| {
                 tb::Client::new(0, format!("{ip}:{port}"), config.max_connections as u32)
                     .map(Arc::new)
+                    .map(Self)
                     .map_err(AccountingError::Connect)
             })
-            .collect::<Result<Vec<_>, AccountingError>>()?;
-
-        tracing::info!("got tigerbeetle cxns");
-
-        Ok(AccountingPool {
-            clients,
-            counter: Arc::default(),
-        })
+            .unwrap()
     }
 
     async fn get(&self) -> Result<Self::Connection, Self::Error> {
-        Ok(Arc::clone(
-            &self.clients[self.counter.fetch_add(1, Ordering::SeqCst) & self.clients.len()],
-        ))
+        Ok(Arc::clone(&self.0))
     }
 
     async fn close(&self) {}
