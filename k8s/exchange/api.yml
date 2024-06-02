@@ -101,7 +101,7 @@ spec:
           name: api-config
   volumeClaimTemplates:
   - metadata:
-      name: litefs-claim
+      name: litefs
       namespace: exchange
     spec:
       accessModes: 
