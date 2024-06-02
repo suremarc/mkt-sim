@@ -59,11 +59,10 @@ jobs:
       run: kubectl apply --server-side --force-conflicts --field-manager gh-actions -f k8s/tigerbeetle
     - name: Create Exchange Config
       run: >-
-        kubectl version &&
-        kubectl -n exchange create configmap exchange-config
+        kubectl -n exchange --dry-run=client -o yaml 
+          create configmap exchange-config
           --from-file=Rocket.toml=exchange/Rocket.toml
-          --from-file=litefs.yml=exchange/litefs.yml 
-          --dry-run=client -o yaml |
+          --from-file=litefs.yml=exchange/litefs.yml |
           kubectl apply -f -
           --server-side
           --force-conflicts
