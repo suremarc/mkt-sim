@@ -72,7 +72,7 @@ jobs:
       with:
         valueFile: k8s/exchange/deployment.yml
         propertyPath: "[0].spec.template.spec.containers[0].image"
-        value: ${{ github.sha }}
+        value: suremarc/mkt-sim-exchange:${{ github.sha }}
         commitChange: false
     - name: Deploy Exchange
       run: kubectl apply --server-side --force-conflicts --field-manager gh-actions -f k8s/exchange
