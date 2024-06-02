@@ -151,7 +151,4 @@ fn root_certs() -> rustls::RootCertStore {
     let certs = rustls_native_certs::load_native_certs().expect("Certs not loadable!");
     roots.add_parsable_certificates(certs);
     roots
-        .roots
-        .extend_from_slice(webpki_roots::TLS_SERVER_ROOTS);
-    roots
 }
