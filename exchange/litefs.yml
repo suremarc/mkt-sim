@@ -31,10 +31,10 @@ lease:
     # Change this if you are running multiple clusters in a single app!
     key: "exchange/primary"
 
-proxy:
-  addr: ":8080"
-  target: "localhost:8000"
-  db: "$ROCKET_DATABASES_META_URL"
+# proxy:
+#   addr: ":8080"
+#   target: "localhost:8000"
+#   db: "$ROCKET_DATABASES_META_URL"
 
 exec:
 - cmd: /opt/exchange/bin/exchange api

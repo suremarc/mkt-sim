@@ -44,7 +44,7 @@ spec:
               name: redis
               key: uri
         - name: ROCKET_DATABASES_META_URL
-          value: data.db
+          value: /litefs/my.db
         # todo: figure out how to link tigerbeetle
         - name: POD_IP
           valueFrom:
