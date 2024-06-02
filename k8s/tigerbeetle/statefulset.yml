@@ -8,8 +8,7 @@ metadata:
 spec:
   clusterIP: None
   ports:
-    - port: 3000
-      targetPort: 4242
+    - port: 4242
       protocol: TCP
   selector: 
     app: tigerbeetle
@@ -24,8 +23,7 @@ metadata:
     app: tigerbeetle
 spec:
   ports:
-    - port: 3000
-      targetPort: 4242
+    - port: 4242
       protocol: TCP
   selector: 
     app: tigerbeetle
@@ -108,22 +106,18 @@ spec:
             cpu: "0.2"
             memory: 128Mi
         volumeMounts:
-          - name: tigerbeetle-nginx-startup-scripts
-            mountPath: /docker-entrypoint.d/nginx-prestart.sh
-            # using subPath here to mount the single file is necessary for the mounted file to have the correct filetype to be noticed by the nginx startup script.
-            subPath: nginx-prestart.sh
-      volumes:
-        - name: tb-data
-          hostPath:
-            path: /var/lib/tigerbeetle
-            type: DirectoryOrCreate
         - name: tigerbeetle-nginx-startup-scripts
-          configMap:
-            name: tigerbeetle-nginx-proxy
-            defaultMode: 0555
-            items:
-              - key: nginx-prestart.sh
-                path: nginx-prestart.sh
+          mountPath: /docker-entrypoint.d/nginx-prestart.sh
+          # using subPath here to mount the single file is necessary for the mounted file to have the correct filetype to be noticed by the nginx startup script.
+          subPath: nginx-prestart.sh
+      volumes:
+      - name: tigerbeetle-nginx-startup-scripts
+        configMap:
+          name: tigerbeetle-nginx-proxy
+          defaultMode: 0555
+          items:
+            - key: nginx-prestart.sh
+              path: nginx-prestart.sh
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -136,3 +130,13 @@ spec:
                 - tigerbeetle
             namespaces:
             - tigerbeetle
+  volumeClaimTemplates:
+  - metadata:
+      name: tb-data
+      namespace: exchange
+    spec:
+      accessModes: 
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 64Gi
