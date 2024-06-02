@@ -521,16 +521,18 @@ impl<'r> FromRequest<'r> for UserIdCheck {
     type Error = ();
 
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        if let Outcome::Success(RoleCheck(claim)) = req.guard::<UserCheck>().await {
+        match req.guard::<UserCheck>().await.map(|check| Self(check.0)) {
+            Outcome::Success(Self(claim))
             // TODO: figure out the relevant parameter dynamically
-            if claim.sub == req.param::<uuid::Uuid>(1).unwrap().unwrap() {
-                return Outcome::Success(Self(claim));
+                if claim.sub == req.param::<uuid::Uuid>(1).unwrap().unwrap() =>
+            {
+                Outcome::Success(Self(claim))
             }
-        } else if let Outcome::Success(RoleCheck(claim)) = req.guard::<AdminCheck>().await {
-            return Outcome::Success(Self(claim));
+            Outcome::Success(Self(_claim)) => {
+                req.guard::<AdminCheck>().await.map(|check| Self(check.0))
+            },
+            o => o,
         }
-
-        Outcome::Error((Status::Unauthorized, ()))
     }
 }
 

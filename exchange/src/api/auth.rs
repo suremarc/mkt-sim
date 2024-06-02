@@ -217,7 +217,7 @@ impl<'r, const FLAGS: i64> FromRequest<'r> for RoleCheck<FLAGS> {
         let claim = try_outcome!(req.guard::<AuthnClaim>().await);
 
         if !claim.roles.contains(required_roles) {
-            Outcome::Error((Status::Unauthorized, ()))
+            Outcome::Error((Status::Forbidden, ()))
         } else {
             Outcome::Success(Self(claim))
         }
