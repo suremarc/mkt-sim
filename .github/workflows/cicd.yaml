@@ -68,10 +68,10 @@ jobs:
           --force-conflicts \
           --field-manager gh-actions
     - name: Use GH hash
-      uses: fjogeleit/yaml-update-action@v0.9.0
+      uses: fjogeleit/yaml-update-action@451fb54
       with:
         valueFile: k8s/exchange/deployment.yml
-        propertyPath: spec.template.spec.containers[0].image
+        propertyPath: "[0].spec.template.spec.containers[0].image"
         value: ${{ github.sha }}
         commitChange: false
     - name: Deploy Exchange
