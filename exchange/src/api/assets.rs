@@ -10,10 +10,18 @@ use diesel::{
     serialize::{Output, ToSql},
     sql_function,
     sql_types::{Integer, Text},
-    Connection, ExpressionMethods, QueryDsl, Queryable, RunQueryDsl, Selectable,
+    ExpressionMethods, Queryable, Selectable,
 };
 use redis::FromRedisValue;
 use rocket::{get, http::Status, post, serde::json::Json};
+use rocket_db_pools::{
+    diesel::{
+        prelude::{QueryDsl, RunQueryDsl},
+        scoped_futures::ScopedFutureExt,
+        AsyncConnection,
+    },
+    Connection,
+};
 use rocket_okapi::openapi;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -27,16 +35,14 @@ use super::{
 };
 
 use super::List;
-use crate::{MetaConn, Orders};
+use crate::{Meta, Orders};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, JsonSchema)]
 #[diesel(table_name = super::schema::equities)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct Equity {
-    /// A unique identifier for equity assets.
-    pub id: i32,
     /// A unique global identifier for this asset.
-    pub asset_id: i32,
+    pub id: i32,
     /// A common identifier for equity assets, usually five letters or less.
     pub ticker: String,
     /// Description of the company that this asset is derived from.
@@ -47,12 +53,10 @@ pub struct Equity {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, JsonSchema)]
 #[diesel(table_name = super::schema::equity_options)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct EquityOption {
-    /// A unique identifier for equity options.
-    pub id: i32,
     /// A unique global identifier for this asset.
-    pub asset_id: i32,
+    pub id: i32,
     /// ID of the equity asset underlying this option.
     pub underlying: i32,
     /// Date that this contract expires.
@@ -72,9 +76,10 @@ pub struct EquityOption {
 #[get("/assets/equities")]
 pub async fn list_equities(
     _check: UserCheck,
-    conn: MetaConn,
+    mut conn: Connection<Meta>,
 ) -> Result<Json<List<Equity>>, Status> {
-    conn.run(|c| super::schema::equities::dsl::equities.get_results(c))
+    super::schema::equities::dsl::equities
+        .get_results(&mut conn)
         .await
         .map(List::from)
         .map(Json)
@@ -88,13 +93,15 @@ pub async fn list_equities(
 ///
 /// Get details for an equity asset.
 #[openapi(tag = "Assets")]
-#[get("/assets/equities/<id>", rank = 0)]
+#[get("/assets/equities/<asset_id>", rank = 0)]
 pub async fn get_equity_by_id(
     _check: UserCheck,
-    conn: MetaConn,
-    id: i32,
+    mut conn: Connection<Meta>,
+    asset_id: i32,
 ) -> Result<Json<Equity>, Status> {
-    conn.run(move |c| super::schema::equities::dsl::equities.find(id).first(c))
+    super::schema::equities::dsl::equities
+        .find(asset_id)
+        .first(&mut conn)
         .await
         .map(Json)
         .map_err(|e| match e {
@@ -113,11 +120,13 @@ pub async fn get_equity_by_id(
 #[get("/assets/equities/<ticker>", rank = 1)]
 pub async fn get_equity_by_ticker(
     _check: UserCheck,
-    conn: MetaConn,
+    mut conn: Connection<Meta>,
     ticker: String,
 ) -> Result<Json<Equity>, Status> {
     use super::schema::equities::dsl;
-    conn.run(move |c| dsl::equities.filter(dsl::ticker.eq(ticker)).first(c))
+    dsl::equities
+        .filter(dsl::ticker.eq(ticker))
+        .first(&mut conn)
         .await
         .map(Json)
         .map_err(|e| match e {
@@ -131,7 +140,7 @@ pub async fn get_equity_by_ticker(
 
 #[derive(Debug, Clone, Deserialize, Insertable, JsonSchema)]
 #[diesel(table_name = super::schema::equities)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct CreateEquityForm {
     pub ticker: String,
     pub description: Option<String>,
@@ -146,23 +155,26 @@ sql_function!(fn last_insert_rowid() -> Integer);
 #[post("/assets/equities", data = "<form>")]
 pub async fn create_equities(
     _check: AdminCheck,
-    conn: MetaConn,
+    mut conn: Connection<Meta>,
     form: Json<List<CreateEquityForm>>,
 ) -> Result<Json<List<Equity>>, Status> {
-    conn.run(move |c| {
-        use super::schema::equities::dsl::*;
+    conn.transaction::<_, diesel::result::Error, _>(|mut conn| {
+        async move {
+            use super::schema::equities::dsl::*;
 
-        c.transaction(|c| {
             let n = form.items.len();
             diesel::insert_into(equities)
                 .values(form.0.items)
-                .execute(c)?;
+                .execute(&mut conn)
+                .await?;
             equities
                 .order(id.desc())
                 .limit(n as i64)
                 .order(id.asc())
-                .get_results(c)
-        })
+                .get_results(&mut conn)
+                .await
+        }
+        .scope_boxed()
     })
     .await
     .map(List::from)
@@ -178,7 +190,7 @@ pub async fn create_equities(
 
 #[derive(Debug, Clone, Serialize, Deserialize, Insertable, JsonSchema)]
 #[diesel(table_name = super::schema::equity_options)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct CreateEquityOptionItem {
     /// ID of the equity asset underlying this option.
     pub underlying: i32,
@@ -198,22 +210,25 @@ pub struct CreateEquityOptionItem {
 #[post("/assets/equities/options", data = "<form>")]
 pub async fn create_equity_options(
     _check: AdminCheck,
-    conn: MetaConn,
+    mut conn: Connection<Meta>,
     form: Json<List<CreateEquityOptionItem>>,
 ) -> Result<Json<List<EquityOption>>, Status> {
-    conn.run(move |c| {
-        c.transaction(|c| {
+    conn.transaction::<_, diesel::result::Error, _>(|mut conn| {
+        async move {
             let n = form.items.len();
             use super::schema::equity_options::dsl::*;
             diesel::insert_into(equity_options)
                 .values(&form.items)
-                .execute(c)?;
+                .execute(&mut conn)
+                .await?;
             equity_options
                 .order(id.desc())
                 .limit(n as i64)
                 .order(id.asc())
-                .get_results(c)
-        })
+                .get_results(&mut conn)
+                .await
+        }
+        .scope_boxed()
     })
     .await
     .map(List::from)
@@ -232,28 +247,18 @@ pub async fn create_equity_options(
 ///
 /// List all equity options derived from a given underlying equity asset.
 #[openapi(tag = "Assets")]
-#[get("/assets/equities/<id>/options", rank = 0)]
+#[get("/assets/equities/<asset_id>/options", rank = 0)]
 pub async fn list_equity_options_by_underlying_id(
     _check: UserCheck,
-    conn: MetaConn,
-    id: i32,
+    mut conn: Connection<Meta>,
+    asset_id: i32,
 ) -> Result<Json<List<EquityOption>>, Status> {
-    let underlying_id = id;
-    conn.run(move |c| {
+    {
         use super::schema::equity_options::dsl::*;
         equity_options
-            .filter(underlying.eq(underlying_id))
-            .select((
-                id,
-                asset_id,
-                underlying,
-                expiration_date,
-                contract_type,
-                strike_price,
-                created,
-            ))
-            .load(c)
-    })
+            .filter(underlying.eq(asset_id))
+            .load(&mut conn)
+    }
     .await
     .map(List::from)
     .map(Json)
@@ -273,10 +278,10 @@ pub async fn list_equity_options_by_underlying_id(
 #[get("/assets/equities/<ticker>/options", rank = 1)]
 pub async fn list_equity_options_by_underlying_ticker(
     _check: UserCheck,
-    conn: MetaConn,
+    mut conn: Connection<Meta>,
     ticker: String,
 ) -> Result<Json<List<EquityOption>>, Status> {
-    conn.run(move |c| {
+    {
         use super::schema::{
             equities::dsl::{self as equities_dsl, equities},
             equity_options::dsl::*,
@@ -287,15 +292,14 @@ pub async fn list_equity_options_by_underlying_ticker(
             .filter(equities_dsl::ticker.eq(ticker))
             .select((
                 id,
-                asset_id,
                 underlying,
                 expiration_date,
                 contract_type,
                 strike_price,
                 created,
             ))
-            .load(c)
-    })
+            .load(&mut conn)
+    }
     .await
     .map(List::from)
     .map(Json)
@@ -324,10 +328,10 @@ impl FromRedisValue for AnonymizedOrderBookEntry {
 ///
 /// Show the current state of the order book for a given asset.
 #[openapi(tag = "Assets")]
-#[get("/assets/<id>/<book>?<cursor>", rank = 3)]
+#[get("/assets/<asset_id>/<book>?<cursor>", rank = 3)]
 pub async fn get_order_book(
     _check: UserCheck,
-    id: i32,
+    asset_id: i32,
     book: Book,
     cursor: Option<usize>,
     mut orders: rocket_db_pools::Connection<Orders>,
@@ -347,7 +351,7 @@ pub async fn get_order_book(
 
     script
         .prepare_invoke()
-        .key(format!("{id}_{book}"))
+        .key(format!("{asset_id}_{book}"))
         .arg(cursor.unwrap_or_default())
         .invoke_async(orders.as_mut())
         .await

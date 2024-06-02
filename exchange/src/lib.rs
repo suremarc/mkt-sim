@@ -4,28 +4,14 @@ use figment::Figment;
 use hickory_resolver::{error::ResolveError, TokioAsyncResolver};
 use itertools::Itertools;
 use rocket_db_pools::{Database, Pool};
-use rocket_okapi::{
-    gen::OpenApiGenerator,
-    request::{OpenApiFromRequest, RequestHeaderInput},
-};
-use rocket_sync_db_pools::database;
 use tigerbeetle_unofficial as tb;
 
 pub mod api;
 pub mod process;
 
+#[derive(Database)]
 #[database("meta")]
-pub struct MetaConn(pub diesel::SqliteConnection);
-
-impl<'r> OpenApiFromRequest<'r> for MetaConn {
-    fn from_request_input(
-        _gen: &mut OpenApiGenerator,
-        _name: String,
-        _required: bool,
-    ) -> rocket_okapi::Result<RequestHeaderInput> {
-        Ok(RequestHeaderInput::None)
-    }
-}
+pub struct Meta(pub rocket_db_pools::diesel::PgPool);
 
 #[derive(Database)]
 #[database("orders")]

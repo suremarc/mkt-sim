@@ -8,7 +8,7 @@ use diesel::{
     serialize::{self, Output, ToSql},
     sql_types::BigInt,
     upsert::excluded,
-    ExpressionMethods, QueryDsl, RunQueryDsl,
+    ExpressionMethods,
 };
 use itertools::Itertools;
 use redis::ToRedisArgs;
@@ -21,6 +21,7 @@ use rocket::{
     serde::json::Json,
     Build, Request, Rocket,
 };
+use rocket_db_pools::diesel::prelude::{QueryDsl, RunQueryDsl};
 use rocket_db_pools::{deadpool_redis::redis, Connection, Database, Pool};
 use rocket_okapi::{
     gen::OpenApiGenerator,
@@ -43,11 +44,11 @@ use tracing::error;
 use super::{
     auth::{AdminCheck, AuthnClaim, RoleCheck, UserCheck},
     schema::users::dsl,
-    types::{Email, Password, Uuid},
+    types::{Email, Password},
     CursorList, ADMIN_ACCOUNT_ID,
 };
 
-use crate::{Accounting, MetaConn, Orders};
+use crate::{Accounting, Meta, Orders};
 
 use diesel::{
     deserialize::FromSqlRow, expression::AsExpression, prelude::Insertable, Queryable, Selectable,
@@ -57,10 +58,10 @@ use super::List;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable, Selectable, Insertable, JsonSchema)]
 #[diesel(table_name = super::schema::users)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct User {
     /// A unique user identifier.
-    pub id: Uuid,
+    pub id: uuid::Uuid,
     pub email: Email,
     #[serde(skip_serializing)]
     pub password: Password,
@@ -117,13 +118,15 @@ where
 ///
 /// Fetches a single account by ID.
 #[openapi(tag = "Accounts")]
-#[get("/accounts/<id>")]
+#[get("/accounts/<account_id>")]
 pub async fn get_account_by_id(
     _check: UserIdCheck,
-    conn: MetaConn,
-    id: Uuid,
+    mut conn: Connection<Meta>,
+    account_id: uuid::Uuid,
 ) -> Result<Json<User>, Status> {
-    conn.run(move |c| dsl::users.find(id).first(c))
+    dsl::users
+        .find(account_id)
+        .first(&mut conn)
         .await
         .map(Json)
         .map_err(|e| match e {
@@ -138,8 +141,12 @@ pub async fn get_account_by_id(
 /// # List all accounts
 #[openapi(tag = "Accounts")]
 #[get("/accounts")]
-pub async fn list_accounts(_check: AdminCheck, conn: MetaConn) -> Result<Json<List<User>>, Status> {
-    conn.run(|c| dsl::users.load(c))
+pub async fn list_accounts(
+    _check: AdminCheck,
+    mut conn: Connection<Meta>,
+) -> Result<Json<List<User>>, Status> {
+    dsl::users
+        .load(&mut conn)
         .await
         .map(List::from)
         .map(Json)
@@ -161,13 +168,13 @@ pub struct NewAccountForm {
 #[openapi(tag = "Accounts")]
 #[post("/accounts", data = "<form>")]
 pub async fn register(
-    conn: MetaConn,
+    mut conn: Connection<Meta>,
     accounting: Connection<Accounting>,
     form: Json<NewAccountForm>,
 ) -> Result<Json<User>, Status> {
     let form = form.0;
 
-    let account_id = Uuid(uuid::Uuid::new_v4());
+    let account_id = uuid::Uuid::new_v4();
     let hash = bcrypt::hash(form.password.expose_secret(), bcrypt::DEFAULT_COST)
         .map(SecretString::new)
         .map(Password)
@@ -176,17 +183,14 @@ pub async fn register(
             Status::InternalServerError
         })?;
 
-    let account = conn
-        .run(move |c| {
-            diesel::insert_into(dsl::users)
-                .values(User {
-                    id: account_id,
-                    email: form.email,
-                    password: hash,
-                    role_flags: Roles::empty(),
-                })
-                .get_result(c)
+    let account = diesel::insert_into(dsl::users)
+        .values(User {
+            id: account_id,
+            email: form.email,
+            password: hash,
+            role_flags: Roles::empty(),
         })
+        .get_result(&mut conn)
         .await
         .map(Json)
         .map_err(|e| match e {
@@ -200,8 +204,8 @@ pub async fn register(
         })?;
 
     match accounting
-        .create_accounts(vec![tb::Account::new(account_id.0.as_u128(), u32::MAX, 1)
-            .with_user_data_128(account_id.0.as_u128())
+        .create_accounts(vec![tb::Account::new(account_id.as_u128(), u32::MAX, 1)
+            .with_user_data_128(account_id.as_u128())
             .with_flags(tb::account::Flags::CREDITS_MUST_NOT_EXCEED_DEBITS)])
         .await
     {
@@ -226,27 +230,26 @@ pub struct Holdings {
 
 /// List equity holdings for an account.
 #[openapi(tag = "Accounts")]
-#[get("/accounts/<id>/equities")]
+#[get("/accounts/<account_id>/equities")]
 pub async fn get_equities_for_account(
     _check: UserIdCheck,
-    id: Uuid,
-    meta: MetaConn,
+    account_id: uuid::Uuid,
+    mut meta: Connection<Meta>,
     accounting: Connection<Accounting>,
 ) -> Result<Json<List<Holdings>>, Status> {
-    let asset_ids: Vec<i32> = meta
-        .run(|c| {
-            use super::schema::equities::dsl::*;
-            equities.select(asset_id).load(c)
-        })
-        .await
-        .map_err(|e| {
-            error!("error fetching equities: {e}");
-            Status::InternalServerError
-        })?;
+    let asset_ids: Vec<i32> = {
+        use super::schema::equities::dsl::*;
+        equities.select(id).load(&mut meta)
+    }
+    .await
+    .map_err(|e| {
+        error!("error fetching equities: {e}");
+        Status::InternalServerError
+    })?;
 
     let tb_ids = asset_ids
         .into_iter()
-        .map(|asset_id| uuid::Uuid::new_v5(&id.0, &i32::to_be_bytes(asset_id)).as_u128())
+        .map(|asset_id| uuid::Uuid::new_v5(&account_id, &i32::to_be_bytes(asset_id)).as_u128())
         .collect_vec();
 
     let assets: Vec<tb::Account> = accounting.lookup_accounts(tb_ids).await.map_err(|e| {
@@ -267,7 +270,7 @@ pub async fn get_equities_for_account(
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToRedisArgs, FromRedisValue)]
 pub struct OrderBookEntry {
-    pub account_id: Uuid,
+    pub account_id: super::types::Uuid,
     pub asset_id: i32,
     pub price: i32,
     pub size: u32,
@@ -347,16 +350,16 @@ impl ToRedisArgs for OrderType {
 #[post("/accounts/<account_id>/assets/<asset_id>/<book>", data = "<form>")]
 pub async fn submit_orders_for_account(
     _check: UserIdCheck,
-    account_id: Uuid,
+    account_id: uuid::Uuid,
     asset_id: i32,
     book: Book,
     mut orders: Connection<Orders>,
     accounting: Connection<Accounting>,
     form: Json<CreateOrderForm>,
 ) -> Result<String, Status> {
-    let order_id = Uuid(uuid::Uuid::now_v7());
+    let order_id = uuid::Uuid::now_v7();
 
-    let asset_account_id = uuid::Uuid::new_v5(&account_id.0, &asset_id.to_be_bytes()).as_u128();
+    let asset_account_id = uuid::Uuid::new_v5(&account_id, &asset_id.to_be_bytes()).as_u128();
 
     // reserve funds/assets
     // todo: how do you handle market buy orders??
@@ -366,12 +369,12 @@ pub async fn submit_orders_for_account(
             if let OrderType::Limit { price } = form.order_type {
                 // TODO: we should technically handle negative prices here...
                 accounting
-                    .create_transfers(vec![tb::Transfer::new(order_id.0.as_u128())
+                    .create_transfers(vec![tb::Transfer::new(order_id.as_u128())
                         .with_code(1)
                         .with_amount(form.size as u128 * price as u128)
                         .with_ledger(u32::MAX)
-                        .with_credit_account_id(account_id.0.as_u128())
-                        .with_debit_account_id(ADMIN_ACCOUNT_ID.0.as_u128())
+                        .with_credit_account_id(account_id.as_u128())
+                        .with_debit_account_id(ADMIN_ACCOUNT_ID.as_u128())
                         .with_flags(tb::transfer::Flags::PENDING)])
                     .await
                     .map_err(|e| {
@@ -384,7 +387,7 @@ pub async fn submit_orders_for_account(
             // they want to sell, so reserve units of the asset
             match accounting
                 .create_accounts(vec![tb::Account::new(asset_account_id, asset_id as u32, 1)
-                    .with_user_data_128(account_id.0.as_u128())
+                    .with_user_data_128(account_id.as_u128())
                     .with_user_data_32(asset_id as u32)
                     .with_flags(tb::account::Flags::CREDITS_MUST_NOT_EXCEED_DEBITS)])
                 .await
@@ -398,13 +401,13 @@ pub async fn submit_orders_for_account(
                 }
             }
             accounting
-                .create_transfers(vec![tb::Transfer::new(order_id.0.as_u128())
+                .create_transfers(vec![tb::Transfer::new(order_id.as_u128())
                     .with_code(1)
                     .with_amount(form.size as u128)
                     .with_ledger(asset_id as u32)
                     .with_credit_account_id(asset_account_id)
                     .with_debit_account_id(
-                        uuid::Uuid::new_v5(&ADMIN_ACCOUNT_ID.0, &asset_id.to_be_bytes()).as_u128(),
+                        uuid::Uuid::new_v5(&ADMIN_ACCOUNT_ID, &asset_id.to_be_bytes()).as_u128(),
                     )
                     .with_flags(tb::transfer::Flags::PENDING)])
                 .await
@@ -420,8 +423,8 @@ pub async fn submit_orders_for_account(
         .key(asset_id)
         .key(format!("{asset_id}_bids"))
         .key(format!("{asset_id}_offers"))
-        .key(account_id)
-        .key(order_id)
+        .key(super::types::Uuid(account_id))
+        .key(super::types::Uuid(order_id))
         .arg(book)
         .arg(form.0)
         .invoke_async(orders.as_mut())
@@ -435,11 +438,11 @@ pub async fn submit_orders_for_account(
 }
 
 #[openapi(tag = "Accounts")]
-#[get("/accounts/<id>/assets/orders?<cursor>")]
+#[get("/accounts/<account_id>/assets/orders?<cursor>")]
 pub async fn list_orders_for_account(
     _check: UserIdCheck,
     mut orders: Connection<Orders>,
-    id: Uuid,
+    account_id: uuid::Uuid,
     cursor: Option<usize>,
 ) -> Result<Json<CursorList<OrderBookEntry>>, Status> {
     let script = redis::Script::new(
@@ -456,7 +459,7 @@ pub async fn list_orders_for_account(
 
     script
         .prepare_invoke()
-        .key(id)
+        .key(super::types::Uuid(account_id))
         .arg(cursor.unwrap_or_default())
         .invoke_async(orders.as_mut())
         .await
@@ -482,16 +485,16 @@ pub struct BalanceForm {
 }
 
 #[openapi(tag = "Accounts")]
-#[post("/accounts/<id>/balance", data = "<form>")]
+#[post("/accounts/<account_id>/balance", data = "<form>")]
 pub async fn deposit_or_withdraw(
     _check: UserIdCheck,
-    id: Uuid,
+    account_id: uuid::Uuid,
     form: Json<BalanceForm>,
     accounting: Connection<Accounting>,
 ) -> Result<(), Status> {
     let (debit, credit) = match form.r#type {
-        BalanceTxType::Deposit => (id.0.as_u128(), ADMIN_ACCOUNT_ID.0.as_u128()),
-        BalanceTxType::Withdraw => (ADMIN_ACCOUNT_ID.0.as_u128(), id.0.as_u128()),
+        BalanceTxType::Deposit => (account_id.as_u128(), ADMIN_ACCOUNT_ID.as_u128()),
+        BalanceTxType::Withdraw => (ADMIN_ACCOUNT_ID.as_u128(), account_id.as_u128()),
     };
 
     accounting
@@ -520,7 +523,7 @@ impl<'r> FromRequest<'r> for UserIdCheck {
     async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         if let Outcome::Success(RoleCheck(claim)) = req.guard::<UserCheck>().await {
             // TODO: figure out the relevant parameter dynamically
-            if claim.account_id == req.param::<Uuid>(1).unwrap().unwrap() {
+            if claim.account_id == req.param::<uuid::Uuid>(1).unwrap().unwrap() {
                 return Outcome::Success(Self(claim));
             }
         } else if let Outcome::Success(RoleCheck(claim)) = req.guard::<AdminCheck>().await {
@@ -561,11 +564,19 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
         Ok(hash) => hash,
     };
 
-    let conn = if let Some(conn) = MetaConn::get_one(&rocket).await {
+    let meta = if let Some(meta) = Meta::fetch(&rocket) {
         tracing::info!("got meta conn");
-        conn
+        meta
     } else {
         return Err(rocket);
+    };
+
+    let mut meta_conn = match meta.get().await {
+        Err(e) => {
+            error!("error getting meta connection: {e}");
+            return Err(rocket);
+        }
+        Ok(conn) => conn,
     };
 
     let accounting = if let Some(accounting) = Accounting::fetch(&rocket) {
@@ -587,11 +598,11 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
 
     match accounting_conn
         .create_accounts(vec![tb::Account::new(
-            ADMIN_ACCOUNT_ID.0.as_u128(),
+            ADMIN_ACCOUNT_ID.as_u128(),
             u32::MAX,
             1,
         )
-        .with_user_data_128(ADMIN_ACCOUNT_ID.0.as_u128())])
+        .with_user_data_128(ADMIN_ACCOUNT_ID.as_u128())])
         .await
     {
         Err(CreateAccountsError::Api(errs))
@@ -604,23 +615,22 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
     };
     tracing::info!("created admin funds account");
 
-    let res = conn
-        .run(move |c| {
-            use super::schema::users::dsl;
+    let res = {
+        use super::schema::users::dsl;
 
-            diesel::insert_into(dsl::users)
-                .values(User {
-                    id: ADMIN_ACCOUNT_ID,
-                    email: form.email,
-                    password: hash,
-                    role_flags: Roles::ADMIN,
-                })
-                .on_conflict(dsl::email)
-                .do_update()
-                .set(dsl::password.eq(excluded(dsl::password)))
-                .execute(c)
-        })
-        .await;
+        diesel::insert_into(dsl::users)
+            .values(User {
+                id: ADMIN_ACCOUNT_ID,
+                email: form.email,
+                password: hash,
+                role_flags: Roles::ADMIN,
+            })
+            .on_conflict(dsl::email)
+            .do_update()
+            .set(dsl::password.eq(excluded(dsl::password)))
+            .execute(&mut meta_conn)
+            .await
+    };
 
     match res {
         Err(e) => {

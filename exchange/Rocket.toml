@@ -3,7 +3,7 @@ email = "user@example.com"
 password = "string"
 
 [debug.databases]
-meta = { url = "data.db" }
+meta = { url = "postgres://postgres@postgres:5432" }
 accounting = { url = "127.0.0.1:3000" }
 orders = { url = "redis://redis:6379" }
 

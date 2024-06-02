@@ -1,26 +1,6 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: exchange-headless
-  namespace: exchange
-  labels:
-    app: exchange
-spec:
-  clusterIP: None
-  ports:
-    - name: api
-      port: 8080
-      protocol: TCP
-    - name: litefs
-      port: 20202
-      protocol: TCP
-  selector: 
-    app: exchange
-    component: api
----
-apiVersion: v1
-kind: Service
-metadata:
   name: exchange
   namespace: exchange
   labels:
@@ -28,14 +8,14 @@ metadata:
 spec:
   ports:
     - name: api
-      port: 8080
+      port: 8000
       protocol: TCP
   selector: 
     app: exchange
     component: api
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: exchange
   namespace: exchange
@@ -43,7 +23,6 @@ metadata:
     app: exchange
     component: api
 spec:
-  serviceName: exchange-headless
   selector:
     matchLabels:
       app: exchange
@@ -57,26 +36,17 @@ spec:
       containers:
       - name: exchange
         image: suremarc/mkt-sim-exchange:latest
-        securityContext:
-          privileged: true
-        command: 
-        - litefs
-        - mount
-        - -config
-        - /etc/config/litefs.yml
         ports:
         - name: api
           containerPort: 8080
-        - name: litefs
-          containerPort: 20202
         readinessProbe:
           httpGet:
-            path: /swagger
-            port: 8080
+            path: /swagger/index.html
+            port: 8000
         livenessProbe:
           httpGet:
-            path: /swagger
-            port: 8080
+            path: /swagger/index.html
+            port: 8000
           failureThreshold: 1
         env:
         - name: ROCKET_CONFIG
@@ -102,10 +72,12 @@ spec:
               name: redis
               key: uri
         - name: ROCKET_DATABASES.META.URL
-          value: /litefs/my.db
+          valueFrom:
+            secretKeyRef:
+              name: postgresql
+              key: uri
         - name: ROCKET_DATABASES.ACCOUNTING.URL
-          value: tigerbeetle-headless.tigerbeetle:4242
-        # todo: figure out how to link tigerbeetle
+          value: tigerbeetle-headless.tigerbeetle:4242=
         resources:
           limits:
             cpu: "1"
@@ -116,22 +88,10 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /etc/config
-        - name: litefs
-          mountPath: /var/lib/litefs
       volumes:
       - name: config
         configMap:
           name: api-config
-  volumeClaimTemplates:
-  - metadata:
-      name: litefs
-      namespace: exchange
-    spec:
-      accessModes: 
-        - ReadWriteOnce
-      resources:
-        requests:
-          storage: 2Gi
 ---
 apiVersion: autoscaling/v1
 kind: HorizontalPodAutoscaler
@@ -143,6 +103,6 @@ spec:
   minReplicas: 3
   scaleTargetRef:
     apiVersion: apps/v1
-    kind: StatefulSet
+    kind: Deployment
     name: exchange
   targetCPUUtilizationPercentage: 60

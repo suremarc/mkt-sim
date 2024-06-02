@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+use diesel::ExpressionMethods;
 use jsonwebtoken as jwt;
 use rocket::{
     http::Status,
@@ -9,6 +9,10 @@ use rocket::{
     request::{FromRequest, Outcome},
     serde::json::Json,
     Request,
+};
+use rocket_db_pools::{
+    diesel::prelude::{QueryDsl, RunQueryDsl},
+    Connection,
 };
 use rocket_okapi::{
     gen::OpenApiGenerator,
@@ -23,10 +27,10 @@ use tracing::error;
 
 use super::{
     accounts::{Roles, User},
-    types::{Email, Password, Uuid},
+    types::{Email, Password},
 };
 
-use crate::MetaConn;
+use crate::Meta;
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct LoginForm {
@@ -36,7 +40,7 @@ pub struct LoginForm {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct AuthnClaim {
-    pub account_id: Uuid,
+    pub account_id: uuid::Uuid,
     pub exp: u64,
 }
 
@@ -51,15 +55,16 @@ pub struct AuthResponse {
 #[openapi(tag = "Auth")]
 #[post("/auth/token", data = "<form>")]
 pub async fn login(
-    conn: MetaConn,
+    mut conn: Connection<Meta>,
     form: Json<LoginForm>,
     jwt_secret: JwtSecretKey,
 ) -> Result<Json<AuthResponse>, Status> {
     use super::schema::users::dsl;
 
     let email = form.email.clone();
-    let user: User = conn
-        .run(move |c| dsl::users.filter(dsl::email.eq(&email)).first(c))
+    let user: User = dsl::users
+        .filter(dsl::email.eq(&email))
+        .first(&mut conn)
         .await
         .map_err(|e| match e {
             diesel::result::Error::NotFound => Status::NotFound,
@@ -214,19 +219,26 @@ impl<'r, const FLAGS: i64> FromRequest<'r> for RoleCheck<FLAGS> {
             return Outcome::Success(Self(claim));
         }
 
-        let conn = try_outcome!(MetaConn::from_request(req).await);
+        let mut conn = try_outcome!(Connection::<Meta>::from_request(req).await.map_error(
+            |(status, pool_err)| {
+                if let Some(e) = pool_err {
+                    error!("pool error: {e}");
+                }
 
-        let roles: Roles = try_outcome!(conn
-            .run(move |c| {
-                use super::schema::users::dsl::*;
-                users
-                    .find(claim.account_id)
-                    .select(role_flags)
-                    .get_result(c)
-            })
-            .await
-            .map_err(|e| { error!("error fetching user roles for '{}': {e}", claim.account_id) })
-            .or_error(Status::InternalServerError));
+                (status, ())
+            }
+        ));
+
+        let roles: Roles = try_outcome!({
+            use super::schema::users::dsl::*;
+            users
+                .find(claim.account_id)
+                .select(role_flags)
+                .get_result(&mut conn)
+                .await
+        }
+        .map_err(|e| error!("error fetching user roles for '{}': {e}", claim.account_id))
+        .or_error(Status::InternalServerError));
 
         if !roles.contains(required_roles) {
             Outcome::Error((Status::Unauthorized, ()))

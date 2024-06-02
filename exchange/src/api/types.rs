@@ -129,7 +129,7 @@ where
     JsonSchema,
 )]
 #[serde(transparent)]
-#[diesel(sql_type = Binary)]
+#[diesel(sql_type = diesel::sql_types::Uuid)]
 pub struct Uuid(pub uuid::Uuid);
 
 impl Uuid {
@@ -156,9 +156,9 @@ impl Display for Uuid {
     }
 }
 
-impl<B: Backend> FromSql<Binary, B> for Uuid
+impl<B: Backend> FromSql<diesel::sql_types::Uuid, B> for Uuid
 where
-    Vec<u8>: FromSql<Binary, B>,
+    Vec<u8>: FromSql<diesel::sql_types::Uuid, B>,
 {
     fn from_sql(bytes: <B as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
         let value = <Vec<u8>>::from_sql(bytes)?;
@@ -168,7 +168,7 @@ where
     }
 }
 
-impl<B: Backend> ToSql<Binary, B> for Uuid
+impl<B: Backend> ToSql<diesel::sql_types::Uuid, B> for Uuid
 where
     [u8]: ToSql<Binary, B>,
 {

@@ -1,4 +1,4 @@
-use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use diesel_async_migrations::{embed_migrations, EmbeddedMigrations};
 use rocket::{
     fairing::{self, AdHoc},
     Build, Rocket,
@@ -15,9 +15,8 @@ use rocket_okapi::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tracing::error;
-use types::Uuid;
 
-use crate::{Accounting, MetaConn, Orders};
+use crate::{Accounting, Meta, Orders};
 
 mod accounts;
 mod assets;
@@ -26,13 +25,13 @@ mod auth;
 pub mod schema;
 pub mod types;
 
-pub const ADMIN_ACCOUNT_ID: Uuid = Uuid(uuid::Uuid::from_bytes([
+pub const ADMIN_ACCOUNT_ID: uuid::Uuid = uuid::Uuid::from_bytes([
     0x6e, 0xb6, 0x21, 0x61, 0x0c, 0xdb, 0x47, 0x1a, 0xaf, 0x31, 0x61, 0x94, 0x9f, 0x09, 0x49, 0x5b,
-]));
+]);
 
 pub fn rocket() -> Rocket<Build> {
     rocket::build()
-        .attach(MetaConn::fairing())
+        .attach(Meta::init())
         .attach(Accounting::init())
         .attach(Orders::init())
         .attach(AdHoc::try_on_ignite("migrate", migrate))
@@ -129,22 +128,23 @@ impl<T: FromRedisValue> FromRedisValue for CursorList<T> {
 }
 
 async fn migrate(rocket: Rocket<Build>) -> fairing::Result {
-    const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
+    static MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
-    let meta = match MetaConn::get_one(&rocket).await {
+    let meta = match Meta::fetch(&rocket) {
         None => return Err(rocket),
         Some(conn) => conn,
     };
 
+    let mut meta_conn = match meta.get().await {
+        Err(e) => {
+            error!("error getting meta cxn: {e}");
+            return Err(rocket);
+        }
+        Ok(cxn) => cxn,
+    };
     tracing::info!("got meta cxn");
 
-    if let Err(e) = meta
-        .run(|c| {
-            c.run_pending_migrations(MIGRATIONS)?;
-            Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
-        })
-        .await
-    {
+    if let Err(e) = MIGRATIONS.run_pending_migrations(&mut meta_conn).await {
         error!("error performing migrations: {e}");
         return Err(rocket);
     };

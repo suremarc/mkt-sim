@@ -2,32 +2,30 @@
 
 diesel::table! {
     equities (id) {
-        id -> Integer,
-        asset_id -> Integer,
+        id -> Int4,
         ticker -> Text,
         description -> Nullable<Text>,
-        created -> Timestamp,
+        created -> Timestamptz,
     }
 }
 
 diesel::table! {
     equity_options (id) {
-        id -> Integer,
-        asset_id -> Integer,
-        underlying -> Integer,
+        id -> Int4,
+        underlying -> Int4,
         expiration_date -> Date,
         contract_type -> Text,
-        strike_price -> Integer,
-        created -> Timestamp,
+        strike_price -> Int4,
+        created -> Timestamptz,
     }
 }
 
 diesel::table! {
     users (id) {
-        id -> Binary,
+        id -> Uuid,
         email -> Text,
         password -> Text,
-        role_flags -> BigInt,
+        role_flags -> Int8,
     }
 }
 

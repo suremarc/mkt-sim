@@ -62,7 +62,6 @@ jobs:
         kubectl -n exchange --dry-run=client -o yaml \
           create configmap api-config \
           --from-file=Rocket.toml=exchange/Rocket.toml \
-          --from-file=litefs.yml=exchange/litefs.yml | \
           kubectl apply -f - \
           --server-side \
           --force-conflicts \
@@ -71,7 +70,7 @@ jobs:
       uses: fjogeleit/yaml-update-action@451fb54614e46f952fc18ffd99e8c93b7b13f85e
       with:
         valueFile: k8s/exchange/api.yml
-        propertyPath: "[2].spec.template.spec.containers[0].image"
+        propertyPath: "[1].spec.template.spec.containers[0].image"
         value: suremarc/mkt-sim-exchange:${{ github.sha }}
         commitChange: false
     - name: Deploy Exchange
