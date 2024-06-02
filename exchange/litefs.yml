@@ -21,7 +21,7 @@ lease:
   promote: true
 
   # The API URL that other nodes will use to connect to this node.
-  advertise-url: "http://$HOSTNAME:20202"
+  advertise-url: "http://$POD_IP:20202"
 
   consul:
     # The URL of the Consul cluster.
@@ -34,7 +34,7 @@ lease:
 proxy:
   addr: ":8080"
   target: "localhost:8000"
-  db: "data.db"
+  db: "$ROCKET_DATABASES_META_URL"
 
 exec:
 - cmd: /opt/exchange/bin/exchange api
