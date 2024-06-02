@@ -53,5 +53,4 @@ spec:
       volumes:
       - name: config
         configMap:
-          name: exchange-config
-      
+          name: api-config
