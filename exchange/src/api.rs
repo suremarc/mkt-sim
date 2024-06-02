@@ -64,7 +64,7 @@ pub fn rocket() -> Rocket<Build> {
                 ..Default::default()
             }),
         );
-    tracing::info!("{:?}", rocket.figment());
+    tracing::info!("{:#?}", rocket.figment());
     rocket
 }
 
