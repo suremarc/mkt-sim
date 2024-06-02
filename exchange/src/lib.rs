@@ -2,6 +2,7 @@ use std::{ops::Deref, sync::Arc};
 
 use figment::Figment;
 use hickory_resolver::{error::ResolveError, TokioAsyncResolver};
+use itertools::Itertools;
 use rocket_db_pools::{Database, Pool};
 use rocket_okapi::{
     gen::OpenApiGenerator,
@@ -72,21 +73,19 @@ impl Pool for AccountingPool {
         let (domain, port) = config.url.split_once(':').ok_or(AccountingError::NoPort)?;
 
         // todo: try to implement dns re-resolution
-        resolver
+        let addresses = resolver
             .ipv4_lookup(domain)
             .await
             .map_err(AccountingError::Resolve)?
-            .iter()
-            .next()
-            .map(|ip| {
-                let url = format!("{ip}:{port}");
-                tracing::info!("connecting to tigerbeetle at {url}");
-                tb::Client::new(0, url, config.max_connections as u32)
-                    .map(Arc::new)
-                    .map(Self)
-                    .map_err(AccountingError::Connect)
-            })
-            .unwrap()
+            .into_iter()
+            .map(|ip| format!("{ip}:{port}"))
+            .join(",");
+        tracing::info!("connecting to tigerbeetle: {addresses}");
+
+        tb::Client::new(0, addresses, config.max_connections as u32)
+            .map(Arc::new)
+            .map(Self)
+            .map_err(AccountingError::Connect)
     }
 
     async fn get(&self) -> Result<Self::Connection, Self::Error> {

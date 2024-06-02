@@ -44,7 +44,6 @@ metadata:
     component: api
 spec:
   serviceName: exchange-headless
-  replicas: 3
   selector:
     matchLabels:
       app: exchange
@@ -128,3 +127,16 @@ spec:
       resources:
         requests:
           storage: 2Gi
+---
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: exchange-api
+spec:
+  maxReplicas: 9
+  minReplicas: 3
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: exchange
+  targetCPUUtilizationPercentage: 60
