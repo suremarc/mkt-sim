@@ -37,4 +37,4 @@ proxy:
   db: "data.db"
 
 exec:
-- cmd: api
+- cmd: /opt/exchange/bin/exchange api

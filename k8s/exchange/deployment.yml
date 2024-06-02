@@ -15,7 +15,7 @@ spec:
       containers:
       - name: exchange
         image: suremarc/mkt-sim-exchange:latest
-        command: [ litefs run -config /etc/config/litefs.yml -- /opt/exchange/bin/exchange api ]
+        command: [ litefs mount -config /etc/config/litefs.yml ]
         ports:
         - name: http
           containerPort: 8080
