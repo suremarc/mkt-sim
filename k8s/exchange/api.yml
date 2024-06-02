@@ -70,12 +70,14 @@ spec:
           containerPort: 8080
         - name: litefs
           containerPort: 20202
-        readinessProbe:
+        livenessProbe:
           httpGet:
             path: /swagger
             port: 8080
           timeoutSeconds: 5
           initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 1
         env:
         - name: ROCKET_CONFIG
           value: /etc/config/Rocket.toml
