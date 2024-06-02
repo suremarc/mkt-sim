@@ -12,4 +12,3 @@ secret = "b76aed65657602cbc44f26284ef076d9f0a548ef547282ff0500338a60a5bfac"
 
 [release]
 address = "0.0.0.0"
-log_level = "normal"
