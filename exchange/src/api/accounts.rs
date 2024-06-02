@@ -562,6 +562,7 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
     };
 
     let conn = if let Some(conn) = MetaConn::get_one(&rocket).await {
+        tracing::info!("got meta conn");
         conn
     } else {
         return Err(rocket);
@@ -577,7 +578,10 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
             error!("error getting accounting cxn: {e}");
             return Err(rocket);
         }
-        Ok(conn) => conn,
+        Ok(conn) => {
+            tracing::info!("got accounting conn");
+            conn
+        }
     };
 
     match accounting_conn
@@ -591,7 +595,7 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
     {
         Err(CreateAccountsError::Api(errs))
             if matches!(errs.as_slice()[0].kind(), CreateAccountErrorKind::Exists) => {}
-        Ok(()) => {}
+        Ok(()) => tracing::info!("created admin funds account"),
         Err(e) => {
             error!("error setting up admin funds account: {e:?}");
             return Err(rocket);
