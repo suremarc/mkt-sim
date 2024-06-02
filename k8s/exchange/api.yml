@@ -99,9 +99,6 @@ spec:
       - name: config
         configMap:
           name: api-config
-      - name: litefs
-        persistentVolumeClaim: 
-          claimName: litefs-claim
   volumeClaimTemplates:
   - metadata:
       name: litefs-claim
