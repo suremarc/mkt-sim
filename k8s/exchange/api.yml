@@ -45,7 +45,6 @@ metadata:
 spec:
   serviceName: exchange-headless
   replicas: 3
-  podManagementPolicy: Parallel
   selector:
     matchLabels:
       app: exchange
@@ -71,6 +70,12 @@ spec:
           containerPort: 8080
         - name: litefs
           containerPort: 20202
+        readinessProbe:
+          httpGet:
+            path: /swagger
+            port: 8080
+          timeoutSeconds: 5
+          initialDelaySeconds: 30
         env:
         - name: ROCKET_CONFIG
           value: /etc/config/Rocket.toml
