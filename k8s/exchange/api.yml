@@ -14,6 +14,27 @@ spec:
     app: exchange
     component: api
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: exchange-lb
+  namespace: exchange
+  labels:
+    app: exchange
+  annotations:
+    # No TLS port annotation needed since 443 is assumed for HTTPS when another TLS option annotation is given.
+    service.beta.kubernetes.io/do-loadbalancer-certificate-id: "8ff40e5d-ae73-4c5e-9e57-36d8d063d05d"
+spec:
+  type: LoadBalancer
+  ports:
+    - name: https
+      protocol: TCP
+      port: 443
+      targetPort: 8000
+  selector:
+    app: exchange
+    component: api
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
