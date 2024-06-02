@@ -79,7 +79,9 @@ impl Pool for AccountingPool {
             .iter()
             .next()
             .map(|ip| {
-                tb::Client::new(0, format!("{ip}:{port}"), config.max_connections as u32)
+                let url = format!("{ip}:{port}");
+                tracing::info!("connecting to tigerbeetle at {url}");
+                tb::Client::new(0, url, config.max_connections as u32)
                     .map(Arc::new)
                     .map(Self)
                     .map_err(AccountingError::Connect)
