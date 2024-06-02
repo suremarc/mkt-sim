@@ -1,16 +1,42 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: exchange-headless
+  namespace: exchange
+  labels:
+    app: exchange
+spec:
+  clusterIP: None
+  ports:
+    - port: 8080
+      protocol: TCP
+    - port: 20202
+      protocol: TCP
+  selector: 
+    app: exchange
+    component: api
+---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: exchange
   namespace: exchange
+  labels:
+    app: exchange
+    component: api
 spec:
+  serviceName: exchange-headless
+  replicas: 3
+  podManagementPolicy: Parallel
   selector:
     matchLabels:
       app: exchange
+      component: api
   template:
     metadata:
       labels:
         app: exchange
+        component: api
     spec:
       containers:
       - name: exchange
@@ -72,15 +98,13 @@ spec:
       - name: litefs
         persistentVolumeClaim: 
           claimName: litefs-claim
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: litefs-claim
-  namespace: exchange
-spec:
-  accessModes:
-  - ReadWriteOnce
-  resources:
-    requests:
-      storage: 2Gi
+  volumeClaimTemplates:
+  - metadata:
+      name: litefs-claim
+      namespace: exchange
+    spec:
+      accessModes: 
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 2Gi
