@@ -20,7 +20,7 @@ pub mod process;
 
 #[derive(Database)]
 #[database("meta")]
-pub struct Meta(pub rocket_db_pools::diesel::PgPool);
+pub struct Meta(pub PgPool);
 
 #[derive(Database)]
 #[database("orders")]

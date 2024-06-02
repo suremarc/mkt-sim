@@ -135,7 +135,7 @@ async fn migrate(rocket: Rocket<Build>) -> fairing::Result {
         Some(conn) => conn,
     };
 
-    let mut meta_conn = match meta.get().await {
+    let mut meta_conn = match meta.0 .0.get().await {
         Err(e) => {
             error!("error getting meta cxn: {e}");
             return Err(rocket);
