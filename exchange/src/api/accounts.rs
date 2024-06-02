@@ -595,12 +595,13 @@ pub async fn create_admin_user(rocket: Rocket<Build>) -> fairing::Result {
     {
         Err(CreateAccountsError::Api(errs))
             if matches!(errs.as_slice()[0].kind(), CreateAccountErrorKind::Exists) => {}
-        Ok(()) => tracing::info!("created admin funds account"),
+        Ok(()) => {}
         Err(e) => {
             error!("error setting up admin funds account: {e:?}");
             return Err(rocket);
         }
     };
+    tracing::info!("created admin funds account");
 
     let res = conn
         .run(move |c| {
