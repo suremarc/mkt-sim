@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
 use bitflags::bitflags;
 use diesel::{
@@ -418,7 +418,11 @@ pub async fn submit_orders_for_account(
         }
     }
 
-    let shares_filled: i32 = redis::Script::new(include_str!("scripts/order.lua"))
+    let (shares_filled, dollar_volume, _orders): (
+        i32,
+        i32,
+        HashMap<super::types::Uuid, OrderBookEntry>,
+    ) = redis::Script::new(include_str!("scripts/order.lua"))
         .prepare_invoke()
         .key(asset_id)
         .key(format!("{asset_id}_bids"))
@@ -434,7 +438,32 @@ pub async fn submit_orders_for_account(
             Status::InternalServerError
         })?;
 
-    Ok(format!("{shares_filled}"))
+    // dbg!(orders);
+
+    // let closing_order_id = uuid::Uuid::now_v7();
+    // match book {
+    //     Book::Bids => {
+    //         match form.order_type {
+    //             OrderType::Limit { price} => {
+    //                 accounting
+    //                 .create_transfers(vec![tb::Transfer::new(closing_order_id.as_u128())
+    //                     .with_code(1)
+    //                     .with_amount(form.size as u128 * price as u128)
+    //                     .with_ledger(u32::MAX)
+    //                     .with_credit_account_id(account_id.as_u128())
+    //                     .with_debit_account_id(ADMIN_ACCOUNT_ID.as_u128())
+    //                     .with_flags(tb::transfer::Flags::PENDING)])
+    //                 .await
+    //                 .map_err(|e| {
+    //                     error!("error reserving funds: {e:?}");
+    //                     Status::InternalServerError
+    //                 })?;
+    //             }
+    //         }
+    //     }
+    // }
+
+    Ok(format!("{shares_filled}, {dollar_volume}"))
 }
 
 #[openapi(tag = "Accounts")]
@@ -473,7 +502,7 @@ pub async fn list_orders_for_account(
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(rename_all = "snake_case")]
-pub enum BalanceTxType {
+pub enum TxType {
     Deposit,
     Withdraw,
 }
@@ -481,20 +510,20 @@ pub enum BalanceTxType {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
 pub struct BalanceForm {
     pub amount: u128,
-    pub r#type: BalanceTxType,
+    pub r#type: TxType,
 }
 
 #[openapi(tag = "Accounts")]
-#[post("/accounts/<account_id>/balance", data = "<form>")]
+#[post("/accounts/<account_id>/assets/cash", data = "<form>")]
 pub async fn deposit_or_withdraw(
-    _check: UserIdCheck,
+    _check: AdminCheck,
     account_id: uuid::Uuid,
     form: Json<BalanceForm>,
     accounting: Connection<Accounting>,
 ) -> Result<(), Status> {
     let (debit, credit) = match form.r#type {
-        BalanceTxType::Deposit => (account_id.as_u128(), ADMIN_ACCOUNT_ID.as_u128()),
-        BalanceTxType::Withdraw => (ADMIN_ACCOUNT_ID.as_u128(), account_id.as_u128()),
+        TxType::Deposit => (account_id.as_u128(), ADMIN_ACCOUNT_ID.as_u128()),
+        TxType::Withdraw => (ADMIN_ACCOUNT_ID.as_u128(), account_id.as_u128()),
     };
 
     accounting

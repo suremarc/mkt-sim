@@ -187,7 +187,6 @@ impl<'a> FromParam<'a> for Uuid {
 
 impl FromRedisValue for Uuid {
     fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
-        dbg!(v);
         match *v {
             redis::Value::Data(ref bytes) => uuid::Uuid::from_slice(bytes)
                 .map_err(|e| {
