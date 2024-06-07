@@ -45,6 +45,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-22.04
+    if: false # Disable while we're rearchitecting
     environment: development
     needs: [ exchange-docker ]
     steps:
