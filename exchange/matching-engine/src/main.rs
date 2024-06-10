@@ -1,6 +1,8 @@
-use std::path::PathBuf;
+use std::{convert::Infallible, fs::OpenOptions, net::SocketAddr, path::PathBuf};
 
 use clap::{Parser, Subcommand};
+use matching_engine::journaler::server;
+use mio::net::TcpListener;
 
 #[derive(Debug, Clone, Parser)]
 struct Args {
@@ -13,15 +15,25 @@ struct Args {
 
 #[derive(Debug, Clone, Subcommand)]
 enum Command {
-    Journal,
+    Journal { addr: SocketAddr },
     Process,
 }
 
-fn main() {
+fn main() -> anyhow::Result<Infallible> {
     let args = Args::parse();
 
-    match args.cmd {
-        Command::Journal => todo!(),
-        Command::Process => todo!(),
+    let mut opts = OpenOptions::new();
+    let logfile = match args.cmd {
+        Command::Journal { .. } => opts.append(true),
+        Command::Process => opts.read(true),
     }
+    .open(args.logfile)?;
+
+    Ok(match args.cmd {
+        Command::Journal { addr } => {
+            let listener = TcpListener::bind(addr)?;
+            server(logfile, listener)?()
+        }
+        Command::Process => todo!(),
+    })
 }
