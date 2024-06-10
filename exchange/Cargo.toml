@@ -4,7 +4,7 @@ name = "exchange"
 version = "0.1.0"
 
 [workspace]
-members = ["matching-engine", "matching-engine/protocol", "pr"]
+members = ["matching-engine", "matching-engine/protocol"]
 
 [dependencies]
 async-trait = "0.1.80"
