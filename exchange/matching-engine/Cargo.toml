@@ -5,8 +5,10 @@ version = "0.1.0"
 
 [dependencies]
 anyhow = "1.0.86"
+bbqueue = "0.5.1"
 clap = { version = "4.5.6", features = ["derive", "env"] }
 etherparse = "0.15.0"
-mio = { version = "0.8.11", features = ["net"] }
+local-sync = "0.1.1"
 protocol = { path = "../protocol" }
 slab = "0.4.9"
+tokio-uring = "0.5.0"

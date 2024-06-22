@@ -1,6 +1,8 @@
 pub mod client;
 pub mod io;
 
+pub use zerocopy;
+
 use std::{fmt::Debug, mem::ManuallyDrop, ptr};
 
 use zerocopy::{
@@ -11,14 +13,13 @@ pub type CastResult<'a, T> = Result<&'a T, TryCastError<&'a [u8], T>>;
 
 #[derive(Debug, Clone, Copy, TryFromBytes, IntoBytes, Immutable, KnownLayout, Unaligned)]
 #[repr(C, packed)]
-pub struct Message<T: Tag, P: ?Sized + WireFormat = [u8]>
-where
-    P: TryFromBytes + IntoBytes + Immutable + KnownLayout + Unaligned,
-{
+pub struct Message<T: Tag, P: ?Sized + WireFormat = [u8]> {
     pub tag: T,
     pub sequence_number: U32,
     payload: ManuallyDrop<P>,
 }
+
+impl<T: Tag, P: ?Sized + WireFormat> WireFormat for Message<T, P> {}
 
 impl<T: Tag, P: ?Sized + WireFormat> Message<T, P> {
     pub fn payload(&self) -> &P {

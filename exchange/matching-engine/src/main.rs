@@ -1,8 +1,8 @@
-use std::{convert::Infallible, fs::OpenOptions, net::SocketAddr, path::PathBuf};
+use std::{convert::Infallible, net::SocketAddr, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 use matching_engine::journaler::server;
-use mio::net::TcpListener;
+use monoio::{fs::OpenOptions, net::TcpListener};
 
 #[derive(Debug, Clone, Parser)]
 struct Args {
@@ -19,7 +19,8 @@ enum Command {
     Process,
 }
 
-fn main() -> anyhow::Result<Infallible> {
+#[monoio::main]
+async fn main() -> anyhow::Result<Infallible> {
     let args = Args::parse();
 
     let mut opts = OpenOptions::new();
@@ -27,13 +28,14 @@ fn main() -> anyhow::Result<Infallible> {
         Command::Journal { .. } => opts.append(true),
         Command::Process => opts.read(true),
     }
-    .open(args.logfile)?;
+    .open(args.logfile)
+    .await?;
 
-    Ok(match args.cmd {
+    match args.cmd {
         Command::Journal { addr } => {
             let listener = TcpListener::bind(addr)?;
-            server(logfile, listener)?()
+            server(logfile, listener).await
         }
         Command::Process => todo!(),
-    })
+    }
 }
