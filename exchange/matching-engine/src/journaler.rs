@@ -1,28 +1,24 @@
-use std::{collections::BTreeMap, io, mem::ManuallyDrop};
+use std::{borrow::Borrow, collections::BTreeMap, io, mem::ManuallyDrop};
 
 use bbqueue::{BBBuffer, Consumer, GrantW, Producer};
+use glommio::{
+    io::DmaStreamWriter,
+    net::{TcpListener, TcpStream},
+};
 use protocol::{client::RequestKind, zerocopy::IntoBytes, Message};
 use slab::Slab;
-use tokio_uring::{
-    buf::{IoBuf, IoBufMut, Slice},
-    fs::File,
-    io::{AsyncReadRent, BufReader, PrefixedReadIo},
-    net::{unix::SocketAddr, TcpListener, TcpStream},
-};
 
 const N: usize = 1 << 20;
 
 pub struct Journaler {}
 
-pub async fn server(handle: File, listener: TcpListener) -> ! {
-    let mut buffers: BTreeMap<SocketAddr, ConnectionHandler> = Default::default();
-
+pub async fn server(handle: DmaStreamWriter, listener: TcpListener) -> ! {
     let mut slab: Slab<BBBuffer<N>> = Slab::with_capacity(1024);
 
     loop {
         match listener.accept().await {
             Err(e) => eprintln!("error accepting cxn: {e}"),
-            Ok((stream, addr)) => {
+            Ok(stream) => {
                 // let buf: &BBBuffer<N> = slab.g;
                 let handler = ConnectionHandler::new(stream, todo!()).unwrap();
                 // let (tx, rx) = buf.try_split().unwrap();
@@ -107,35 +103,6 @@ async fn handle_connection(mut stream: TcpStream, mut tx: Producer<'static, N>) 
                 grant.grant.commit(n_segment);
             }
         }
-    }
-}
-
-struct IoGrantW<'a> {
-    grant: GrantW<'a, N>,
-    written: usize,
-}
-
-unsafe impl IoBuf for IoGrantW {
-    fn stable_ptr(&mut self) -> *mut u8 {
-        self.grant.buf().as_mut_ptr()
-    }
-
-    fn bytes_init(&self) -> usize {
-        self.grant.buf().len()
-    }
-
-    fn bytes_total(&mut self) -> usize {
-        self.grant.buf().len()
-    }
-}
-
-unsafe impl IoBufMut for IoGrantW {
-    fn stable_mut_ptr(&mut self) -> *mut u8 {
-        self.grant.buf().as_mut_ptr()
-    }
-
-    unsafe fn set_init(&mut self, pos: usize) {
-        self.written = pos;
     }
 }
 
