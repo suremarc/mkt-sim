@@ -1,21 +1,22 @@
 use std::{
     cell::RefCell,
-    io::{self, Write},
+    io::{self},
     net::SocketAddr,
     ops::{Deref, DerefMut},
     rc::Rc,
 };
 
-use bbqueue::{BBBuffer, GrantW, Producer};
+use bbqueue::{BBBuffer, GrantR, GrantW, Producer};
 
 use monoio::{
-    buf::IoBufMut,
+    buf::{IoBuf, IoBufMut},
     fs::File,
     io::{AsyncReadRent, AsyncWriteRentExt},
     net::{TcpListener, TcpStream},
+    IoUringDriver,
 };
 use protocol::{
-    client::{ErrorKind, RequestKind, ResponseKind},
+    client::{ErrorKind, RequestKind},
     zerocopy::{IntoBytes, TryFromBytes},
     Message,
 };
@@ -26,9 +27,38 @@ const N: usize = 1 << 20;
 static BB: BBBuffer<N> = BBBuffer::new();
 
 pub async fn server(handle: File, addr: SocketAddr) -> ! {
-    let (tx, rx) = BB.try_split().unwrap();
-    let tx = Rc::new(RefCell::new(tx));
+    let (tx, mut rx) = BB.try_split().unwrap();
 
+    std::thread::spawn(move || monoio::start::<IoUringDriver, _>(accept_loop(addr, tx)));
+
+    loop {
+        // todo: async backoff
+        let grant = match rx.read() {
+            Err(bbqueue::Error::InsufficientSize) => continue,
+            Err(e) => panic!("{e:?}"),
+            Ok(grant) => grant,
+        };
+
+        if let Err(e) = handle.write_all_at(IoGrantR(grant), 0).await.0 {
+            eprintln!("{e}");
+        }
+    }
+}
+
+struct IoGrantR(GrantR<'static, N>);
+
+unsafe impl IoBuf for IoGrantR {
+    fn read_ptr(&self) -> *const u8 {
+        self.0.buf().as_ptr()
+    }
+
+    fn bytes_init(&self) -> usize {
+        self.0.buf().len()
+    }
+}
+
+async fn accept_loop(addr: SocketAddr, tx: Producer<'static, N>) -> ! {
+    let tx = Rc::new(RefCell::new(tx));
     let listener = TcpListener::bind(addr).unwrap();
     loop {
         match listener.accept().await {
@@ -52,6 +82,7 @@ async fn handle_connection(
     let mut result;
 
     loop {
+        // todo: async backoff
         let mut grant = tx
             .as_ref()
             .borrow_mut()

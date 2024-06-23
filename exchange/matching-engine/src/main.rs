@@ -1,4 +1,4 @@
-use std::{convert::Infallible, net::SocketAddr, path::PathBuf};
+use std::{convert::Infallible, net::SocketAddr, os::unix::fs::OpenOptionsExt, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 use matching_engine::journaler::server;
@@ -25,7 +25,9 @@ async fn main() -> anyhow::Result<Infallible> {
 
     let mut opts = OpenOptions::new();
     let logfile = match args.cmd {
-        Command::Journal { .. } => opts.append(true),
+        Command::Journal { .. } => opts
+            .append(true)
+            .custom_flags(libc::O_DIRECT | libc::O_SYNC),
         Command::Process => opts.read(true),
     }
     .open(args.logfile)
