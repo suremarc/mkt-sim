@@ -1,120 +1,156 @@
-use std::{borrow::Borrow, collections::BTreeMap, io, mem::ManuallyDrop};
+use std::{
+    cell::RefCell,
+    io::{self, Write},
+    net::SocketAddr,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+};
 
-use bbqueue::{BBBuffer, Consumer, GrantW, Producer};
-use glommio::{
-    io::DmaStreamWriter,
+use bbqueue::{BBBuffer, GrantW, Producer};
+
+use monoio::{
+    buf::IoBufMut,
+    fs::File,
+    io::{AsyncReadRent, AsyncWriteRentExt},
     net::{TcpListener, TcpStream},
 };
-use protocol::{client::RequestKind, zerocopy::IntoBytes, Message};
-use slab::Slab;
-
-const N: usize = 1 << 20;
+use protocol::{
+    client::{ErrorKind, RequestKind, ResponseKind},
+    zerocopy::{IntoBytes, TryFromBytes},
+    Message,
+};
 
 pub struct Journaler {}
 
-pub async fn server(handle: DmaStreamWriter, listener: TcpListener) -> ! {
-    let mut slab: Slab<BBBuffer<N>> = Slab::with_capacity(1024);
+const N: usize = 1 << 20;
+static BB: BBBuffer<N> = BBBuffer::new();
 
+pub async fn server(handle: File, addr: SocketAddr) -> ! {
+    let (tx, rx) = BB.try_split().unwrap();
+    let tx = Rc::new(RefCell::new(tx));
+
+    let listener = TcpListener::bind(addr).unwrap();
     loop {
         match listener.accept().await {
             Err(e) => eprintln!("error accepting cxn: {e}"),
-            Ok(stream) => {
-                // let buf: &BBBuffer<N> = slab.g;
-                let handler = ConnectionHandler::new(stream, todo!()).unwrap();
-                // let (tx, rx) = buf.try_split().unwrap();
-                // buffers.insert(addr,)
-                // monoio::spawn(handle_connection(stream, tx));
+            Ok((stream, _addr)) => {
+                monoio::spawn(handle_connection(stream, tx.clone()));
             }
         }
     }
 }
 
-struct ConnectionHandler {
-    stream: TcpStream,
-    buf: &'static BBBuffer<N>,
-    tx: ManuallyDrop<Producer<'static, N>>,
-    rx: ManuallyDrop<Consumer<'static, N>>,
-    scratch: Vec<u8>,
-}
-
-struct RBuf {
-    buf: &'static BBBuffer<N>,
-    tx: ManuallyDrop<Producer<'static, N>>,
-    rx: ManuallyDrop<Consumer<'static, N>>,
-}
-
-impl Drop for RBuf {
-    fn drop(&mut self) {
-        let _ = self
-            .buf
-            .try_release(unsafe { ManuallyDrop::take(&mut self.tx) }, unsafe {
-                ManuallyDrop::take(&mut self.rx)
-            });
-    }
-}
-
-struct ConnectionState {}
-
-impl ConnectionHandler {
-    fn new(stream: TcpStream, buf: &'static BBBuffer<N>) -> Result<Self, bbqueue::Error> {
-        let (tx, rx) = buf.try_split()?;
-        Ok(Self {
-            stream,
-            buf,
-            tx: ManuallyDrop::new(tx),
-            rx: Some(ManuallyDrop::new(rx)),
-            scratch: Vec::with_capacity(N),
-        })
-    }
-}
-
-impl Drop for ConnectionHandler {
-    fn drop(&mut self) {
-        let _ = self
-            .buf
-            .try_release(unsafe { ManuallyDrop::take(&mut self.tx) }, unsafe {
-                ManuallyDrop::take(&mut self.rx)
-            });
-    }
-}
-
-async fn handle_connection(mut stream: TcpStream, mut tx: Producer<'static, N>) -> io::Result<()> {
+async fn handle_connection(
+    mut stream: TcpStream,
+    tx: Rc<RefCell<Producer<'static, N>>>,
+) -> io::Result<()> {
     let mut scratch = Vec::<u8>::with_capacity(1 << 16);
+    let mut write_buf = Vec::<u8>::with_capacity(1 << 16);
+
+    let mut seq = 0;
+
     let mut result;
 
     loop {
+        let mut grant = tx
+            .as_ref()
+            .borrow_mut()
+            .grant_max_remaining(1 << 16)
+            .unwrap();
+
+        grant.buf().copy_from_slice(&scratch);
+        let n_scratch = scratch.len();
+        scratch.clear();
+
         let mut grant = IoGrantW {
-            grant: tx.grant_max_remaining(1 << 16).unwrap(),
-            written: 0,
+            grant,
+            written: n_scratch,
         };
 
-        (result, grant) = PrefixedReadIo::new(&mut stream, scratch.as_slice())
-            .read(grant)
-            .await;
+        (result, grant) = stream.read(grant).await;
         match result {
             Err(e) => {
                 eprintln!("error deserializing message: {e:?}");
             }
             Ok(n) => {
-                let n_segment = find_boundary(&grant.grant.buf()[..n]);
-                scratch.clear();
-                scratch.extend_from_slice(&grant.grant.buf()[n_segment..n]);
+                let n_segment = validate(&grant.buf()[..n], &mut write_buf, &mut seq);
+                scratch.extend_from_slice(&grant.buf()[n_segment..n]);
 
-                grant.grant.commit(n_segment);
+                grant.commit(n_segment);
             }
         }
+
+        // todo: handle reading in another task
+        (result, write_buf) = stream.write_all(write_buf).await;
+        result.unwrap();
     }
 }
 
-fn find_boundary(mut bytes: &[u8]) -> usize {
-    let original = bytes;
+fn validate(mut rem: &[u8], write_buf: &mut Vec<u8>, seq: &mut u32) -> usize {
+    let original = rem;
     loop {
-        let len = u16::from_be_bytes([bytes[0], bytes[1]]) as usize;
-        if len > bytes.len() {
+        let len = u16::from_be_bytes([rem[0], rem[1]]) as usize;
+        if len > rem.len() {
             break;
         }
-        bytes = &bytes[len..];
+
+        let msg_bytes;
+        (msg_bytes, rem) = rem.split_at(len);
+
+        match Message::<RequestKind>::try_ref_from(msg_bytes) {
+            Err(_e) => {
+                write_buf.extend_from_slice(Message::new(*seq, ErrorKind::Invalid).as_bytes())
+            }
+            Ok(msg) => {
+                if msg.sequence_number.get() != *seq {
+                    write_buf.extend_from_slice(
+                        Message::new(*seq, ErrorKind::UnexpectedSequenceNumber).as_bytes(),
+                    )
+                }
+            }
+        };
+
+        *seq += 1;
     }
 
-    bytes.as_ptr() as usize - original.as_ptr() as usize
+    rem.as_ptr() as usize - original.as_ptr() as usize
+}
+
+struct IoGrantW {
+    grant: GrantW<'static, N>,
+    written: usize,
+}
+
+impl IoGrantW {
+    fn commit(self, used: usize) {
+        self.grant.commit(used)
+    }
+}
+
+unsafe impl IoBufMut for IoGrantW {
+    fn write_ptr(&mut self) -> *mut u8 {
+        self.grant.buf().as_mut_ptr()
+    }
+
+    fn bytes_total(&mut self) -> usize {
+        self.grant.buf().len()
+    }
+
+    unsafe fn set_init(&mut self, pos: usize) {
+        self.written = pos;
+    }
+}
+
+impl Deref for IoGrantW {
+    type Target = GrantW<'static, N>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.grant
+    }
+}
+
+impl DerefMut for IoGrantW {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.grant
+    }
 }

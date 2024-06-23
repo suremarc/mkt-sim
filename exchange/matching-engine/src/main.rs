@@ -2,7 +2,7 @@ use std::{convert::Infallible, net::SocketAddr, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 use matching_engine::journaler::server;
-use monoio::{fs::OpenOptions, net::TcpListener};
+use monoio::fs::OpenOptions;
 
 #[derive(Debug, Clone, Parser)]
 struct Args {
@@ -32,10 +32,7 @@ async fn main() -> anyhow::Result<Infallible> {
     .await?;
 
     match args.cmd {
-        Command::Journal { addr } => {
-            let listener = TcpListener::bind(addr)?;
-            server(logfile, listener).await
-        }
+        Command::Journal { addr } => server(logfile, addr).await,
         Command::Process => todo!(),
     }
 }

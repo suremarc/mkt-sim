@@ -5,7 +5,7 @@ use zerocopy::{
     Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned,
 };
 
-use crate::{Tag, WireFormat};
+use crate::{ApplicationLayer, Tag, WireFormat};
 
 #[derive(Debug, Clone, Copy, TryFromBytes, IntoBytes, Immutable, KnownLayout, Unaligned)]
 #[repr(u8)]
@@ -22,6 +22,7 @@ impl Tag for RequestKind {}
 pub enum ResponseKind {
     NewOrderAck,
     CancelOrderAck,
+    Error,
 }
 
 impl WireFormat for ResponseKind {}
@@ -37,8 +38,6 @@ pub struct Order {
 
 impl WireFormat for Order {}
 
-impl WireFormat for OrderAck {}
-
 #[derive(Debug, Clone, Copy, TryFromBytes, IntoBytes, Immutable, KnownLayout, Unaligned)]
 #[repr(u8)]
 pub enum Side {
@@ -52,10 +51,37 @@ pub struct CancelOrder {
     pub id: U128,
 }
 
+impl WireFormat for CancelOrder {}
+
 #[derive(Debug, Clone, Copy, TryFromBytes, IntoBytes, Immutable, KnownLayout, Unaligned)]
 #[repr(C, packed)]
-pub struct OrderAck {
+pub struct NewOrderAck {
     pub user: U128,
     pub id: U128,
     pub timestamp: U64,
+}
+
+impl WireFormat for NewOrderAck {}
+impl ApplicationLayer for NewOrderAck {
+    type Tag = ResponseKind;
+
+    fn tag(&self) -> Self::Tag {
+        ResponseKind::NewOrderAck
+    }
+}
+
+#[derive(Debug, Clone, Copy, TryFromBytes, IntoBytes, Immutable, KnownLayout, Unaligned)]
+#[repr(u8)]
+pub enum ErrorKind {
+    Invalid,
+    UnexpectedSequenceNumber,
+}
+
+impl WireFormat for ErrorKind {}
+impl ApplicationLayer for ErrorKind {
+    type Tag = ResponseKind;
+
+    fn tag(&self) -> Self::Tag {
+        ResponseKind::Error
+    }
 }
